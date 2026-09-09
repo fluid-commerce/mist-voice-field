@@ -296,8 +296,8 @@ function layout() {
   cs = Math.max(2, Math.floor(Math.min(W * 0.36 * mScale * lay / MWg, H * 0.46 * mScale * lay / MHg)));
   cols = Math.ceil(W / cs); rows = Math.ceil(H / cs);
   allocGrid();
-  const tI = LAYOUT === "left" ? Math.round(cols * 0.26 - MW / 2) : LAYOUT === "answer" ? Math.round(cols * 0.7 - MW / 2) : Math.round((cols - MW) / 2);
-  const tJ = LAYOUT === "high" ? Math.round(rows * 0.3 - MH / 2) : LAYOUT === "left" ? Math.round(rows * 0.42 - MH / 2) : LAYOUT === "answer" ? Math.round(rows * 0.72 - MH / 2) : Math.round((rows - MH) / 2 + rows * 0.03);
+  const tI = LAYOUT === "left" ? Math.round(cols * 0.26 - MW / 2) : LAYOUT === "answer" ? Math.round(cols * 0.13 - MW / 2) : Math.round((cols - MW) / 2);
+  const tJ = LAYOUT === "high" ? Math.round(rows * 0.3 - MH / 2) : LAYOUT === "left" ? Math.round(rows * 0.42 - MH / 2) : LAYOUT === "answer" ? Math.round(rows * 0.22 - MH / 2) : Math.round((rows - MH) / 2 + rows * 0.03);
   // the M glides to its new spot in whole cells (a few per frame) instead of jumping
   if (mi0 === 0 && mj0 === 0 || !ANIMATE_LAYOUT) { mi0 = tI; mj0 = tJ; }
   layoutTarget.i = tI; layoutTarget.j = tJ;
@@ -441,6 +441,65 @@ function wipeAlpha(c) {
   return 0;
 }
 const wipeFn = c => 1 - thinkMix * (1 - wipeAlpha(c));
+// listening: the M's own cells fly to the top-left and settle into a slowly turning dot sphere. Same pixels, same
+// material: front dots big and white, back dots small and faint so it reads as a globe, not a disc. f = 0 → the M.
+function drawOrbMorph(f, L) {
+  const N = MC.length, ga = 2.39996323;                          // golden angle: an even lattice over the sphere
+  const Ro = Math.hypot(MW, MH) * 0.3;
+  const ocx = cols * 0.13, ocy = rows * 0.22;
+  const rot = T * 0.7, tilt = 0.35, ct = Math.cos(tilt), st = Math.sin(tilt);
+  const ease = smoothstep(0, 1, f);
+  for (let k = 0; k < N; k++) {
+    const c = MC[k], gi = mi0 + c.i, gj = mj0 + c.j;
+    MP[k * 2] = gi; MP[k * 2 + 1] = gj; MPROX[k] = 0; MA[k] = 1 - ease;   // streams fade out with the M
+    const y0 = 1 - 2 * (k + 0.5) / N, rr = Math.sqrt(Math.max(0, 1 - y0 * y0)), ph = k * ga + rot;
+    const x = rr * Math.cos(ph), z0 = rr * Math.sin(ph);
+    const y = y0 * ct - z0 * st, z = y0 * st + z0 * ct;             // tilted axis so the rotation reads
+    const px = ocx + x * Ro, py = ocy + y * Ro;
+    if (ease > 0.985) continue;                                     // arrived: the solid orb has taken over
+    const mSize = mistFrac(c, 0.05 * L);
+    // each cell flies on a slight arc so the swarm reads as flight, not a slide, and thins out as it lands
+    const gx = gi * (1 - ease) + px * ease, gy = gj * (1 - ease) + py * ease - Math.sin(ease * Math.PI) * 6 * D * c.hv;
+    cell(Math.round(gx), Math.round(gy), mSize * (1 - ease) + 0.4 * ease, (1 - ease) * (1 - ease * 0.5) + 0.0, true, col(0));
+  }
+}
+// the listening orb itself: a dense, solid pixel sphere in the M's material. Every grid cell inside the disc is a dot,
+// sized by sphere shading (light from the upper left) times a noise texture wrapped on the sphere that turns slowly,
+// so the rotation reads as blotches drifting across it. The rim is slightly rough: its radius wobbles around the contour.
+function drawOrb(f, L) {
+  const ease = smoothstep(0, 1, f); if (ease < 0.01) return;
+  const Ro = Math.hypot(MW, MH) * 0.3;                              // steady: the orb does not pulse with the voice
+  const ocx = cols * 0.13, ocy = rows * 0.22, rot = T * 0.35;
+  const lx = -0.45, ly = -0.55, lz = 0.7;                            // light direction (upper left, in front)
+  const i0 = Math.max(0, Math.floor(ocx - Ro * 1.15)), i1 = Math.min(cols, Math.ceil(ocx + Ro * 1.15));
+  const j0 = Math.max(0, Math.floor(ocy - Ro * 1.15)), j1 = Math.min(rows, Math.ceil(ocy + Ro * 1.15));
+  for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) {
+    const dx = i - ocx, dy = j - ocy, d = Math.hypot(dx, dy) / Ro;
+    if (d > 1.14) continue;
+    const ang = Math.atan2(dy, dx);
+    const rim = 1 + 0.07 * (2 * vnoise2(Math.cos(ang) * 2.3 + T * 0.12, Math.sin(ang) * 2.3 - T * 0.09) - 1);   // rough contour
+    if (d > rim) continue;
+    const dn = d / rim, nx = dx / (Ro * rim), ny = dy / (Ro * rim), z = Math.sqrt(Math.max(0, 1 - dn * dn));
+    const lon = Math.atan2(nx, z) + rot, lat = Math.asin(clamp(ny, -1, 1));
+    const tex = vnoise2(Math.cos(lon) * 2.4 + lat * 1.1 + 3.7, Math.sin(lon) * 2.4 - lat * 1.7);
+    const lam = Math.max(0, lx * nx + ly * ny + lz * z);
+    const size = (0.3 + 0.5 * lam) * (0.7 + 0.6 * tex) * (0.9 + 0.2 * hash(i, j)) * (1 - 0.3 * (1 - z) * (1 - z));
+    cell(i, j, clamp(size, 0.14, 0.95), (0.55 + 0.45 * lam) * ease, true, col(0));
+    // the right limb sheds mist exactly like the M's right edge: the logo's golden shed, straight right, easing out
+    if (nx > 0.45 && dn > 0.55) {
+      const shed = smoothstep(0.45, 0.95, nx) * smoothstep(0.55, 0.9, dn);
+      const travel = Ro * 2.6;
+      for (let q = 0; q < 2; q++) {
+        if (hash(i + q * 11, j + 3.1) > shed * 0.55 / D) continue;
+        const pp = fract(T * 0.5 + hash(i, j) + q * 0.618), ez = pp * pp;
+        const gi = i + Math.round(ez * travel);
+        const gj = j + Math.round(((hash(i + q * 13, j + q * 7) - 0.5) * 0.9 * 3 * ez + Math.sin(ez * 5 + hash(i, j) * 6.283) * 1.4 * ez - 0.3 * ez * 5) * D);
+        const sf = 0.55 - 0.42 * pp; if (sf < 0.14) continue;
+        cell(gi, gj, sf, (1 - pp * pp) * 0.8 * ease, false, col(0));
+      }
+    }
+  }
+}
 // Draw the M. sizeFn(cell, k) -> frac; leaves per-cell displaced positions in MP for shedding etc.
 function drawM(sizeFn, alphaFn, sub) {
   if (!alphaFn && thinkMix > 0.001) alphaFn = wipeFn;
@@ -519,7 +578,8 @@ function drawBoard() {
 }
 // the board is not inert: grid dots around the M brighten with the voice, and every shed
 // particle leaves a faint wake on the dots it passes, so the whole surface reads as disturbed
-const WAVES = []; let waveCool = 0; let haloOuter = 0, haloMix = 0, haloFrame = 0;
+const WAVES = []; let waveCool = 0; let haloOuter = 0, haloMix = 0, haloFrame = 0, haloCX = 0, haloCY = 0, haloLow = 0;
+let bubbleShape = af => 1;   // set by the Halo each frame: the listening bubble's radial contour
 let FLD = null, FLDc = 0, FLDr = 0;
 const BPULSES = []; let bpCool = 0, bpIdle = 0;
 const FCG = 4;   // the ambient field is sampled every 4 cells and interpolated: cheap, and the swells are broad anyway
@@ -556,12 +616,13 @@ function drawBoardAura(L) {
   }
   const ambT = 0.42, gain = 1.45 * (0.75 + 0.5 * F);
   const d1 = MSKimg.data, d2 = MSKimg2.data;
+  const pcx = haloCX || cx, pcy = haloCY || cy;                     // pulses radiate from the ring's centre
   for (let py = 0; py < mh; py++) {
-    const j = py * 2 + 1, fy = j / FCG, jj = Math.min(frn - 2, Math.floor(fy)), vy = fy - jj, dy = j - cy;
+    const j = py * 2 + 1, fy = j / FCG, jj = Math.min(frn - 2, Math.floor(fy)), vy = fy - jj, dy = j - pcy;
     for (let px = 0; px < mw; px++) {
       const i = px * 2 + 1, fx = i / FCG, ii = Math.min(fc - 2, Math.floor(fx)), vx = fx - ii, k0 = jj * fc + ii;
       const amb = (FLD[k0] * (1 - vx) + FLD[k0 + 1] * vx) * (1 - vy) + (FLD[k0 + fc] * (1 - vx) + FLD[k0 + fc + 1] * vx) * vy;
-      const r = Math.hypot(i - cx, dy);
+      const r = Math.hypot(i - pcx, dy);
       let pulse = 0;
       for (let n = 0; n < BPULSES.length; n++) { const w = BPULSES[n], d = (r - w.r) / w.wd; if (d > -2.5 && d < 2.5) pulse += w.s * Math.pow(w.life, 1.3) * Math.exp(-d * d); }
       const base = (amb - ambT) * gain, v = base + pulse * 0.6;
@@ -586,10 +647,9 @@ function drawBoardAura(L) {
   // 2. pressure waves: each syllable sends a ring across the whole board, past the halo, out to the edges
   waveCool -= 1 / 60;
   const framed = haloFrame > 0.5;
-  const parked = LAYOUT === "answer";
-  if (voice.onset > 0.3 && waveCool <= 0 && WAVES.length < 5 && !parked && !framed) {
-    // framed: born at the screen edge, travelling inward. Otherwise: born at the ring, travelling out.
-    WAVES.push(framed ? { r: 1.0, s: clamp(voice.onset * 1.2, 0.35, 1), age: 0, inward: true } : { r: haloOuter || Math.hypot(MW, MH) * 0.9, s: clamp(voice.onset * 1.2, 0.35, 1), age: 0, mix: haloMix });
+  const bubbling = haloLow > 0.5 && LAYOUT !== "answer";              // waves only leave the listening bubble, in its own shape
+  if (voice.onset > 0.3 && waveCool <= 0 && WAVES.length < 5 && bubbling && !framed) {
+    WAVES.push({ r: haloOuter || Math.hypot(MW, MH) * 0.9, s: clamp(voice.onset * 1.2, 0.35, 1), age: 0 });
     waveCool = 0.45;
   }
   const vMax = Math.hypot(cols, rows) * 0.6;
@@ -604,7 +664,7 @@ function drawBoardAura(L) {
     // a ring of particles: clean at birth, then it dissolves in noisy clumps (not uniformly) and drifts apart
     const N = 280;
     const scatter = (0.6 + 9 * (1 - life)) * D, keep = Math.pow(life, 0.8);
-    const ox = w.inward ? cols / 2 : cx, oy = w.inward ? rows / 2 : cy;
+    const ox = w.inward ? cols / 2 : haloCX, oy = w.inward ? rows / 2 : haloCY;
     for (let q = 0; q < N; q++) {
       const ang = (q + 0.5) / N * 6.283 + (hash(q, n * 3 + 2) - 0.5) * 0.03;
       // dissolution field: low-frequency noise over angle and travel, so holes open as patches
@@ -612,7 +672,7 @@ function drawBoardAura(L) {
       const hq = hash(q, n * 3 + 1);
       if (nz * 0.65 + hq * 0.35 > keep) continue;
       const rr = w.inward ? rectR(fract(ang / 6.283)) * w.r + (hash(q, n * 3 + 3) - 0.5) * scatter * 0.6
-                          : w.r * shapeAt(fract(ang / 6.283), haloMix) + (hash(q, n * 3 + 3) - 0.5) * scatter * (0.4 + 0.6 * hq);
+                          : w.r * bubbleShape(fract(ang / 6.283)) + (hash(q, n * 3 + 3) - 0.5) * scatter * (0.4 + 0.6 * hq);
       const gi = Math.round(ox + Math.cos(ang) * rr), gj = Math.round(oy + Math.sin(ang) * rr);
       if (gi < 0 || gj < 0 || gi >= cols || gj >= rows) continue;
       cell(gi, gj, (0.18 + 0.32 * life) * w.s * (0.6 + 0.6 * nz) + 0.1, (0.15 + 0.5 * life) * w.s * (0.5 + 0.7 * nz), false, col(0.55 + 0.35 * (1 - life)));
@@ -776,23 +836,44 @@ V.push({
   get blurb() { return VIBES[VIBE].blurb; },
   draw(dt, sub) {
     const L = voice.level, B = voice.bands, O = voice.onset, vb = VIBES[VIBE];
-    const Rb = Math.hypot(MW, MH) * 0.5 * 1.35 + 3 * D;
+    // listening: the orb leaves the M and sits on the bottom edge of the screen, centered, its lower half out of view:
+    // a bubble under the M. Everything else keeps the ring around the M.
+    // The three ring geometries (around the M, the bubble, the screen-edge frame) are different objects: they
+    // cross-fade quickly, they never slide into each other.
+    this.low = (this.low || 0) + ((state === "listening" && LAYOUT !== "answer" ? 1 : 0) - (this.low || 0)) * Math.min(1, dt * 5);
+    const lowF = smoothstep(0, 1, this.low);
+    const RbM = Math.hypot(MW, MH) * 0.5 * 1.35 + 3 * D, RbLow = rows * 0.34;
+    const Rb = RbM;                                                   // stream hits are about the ring around the M
+    const bcx = cols / 2, bcy = rows - 0.5;                            // bubble centre: the bottom edge
+    const rcx = lowF > 0.5 ? bcx : cx, rcy = lowF > 0.5 ? bcy : cy;   // where the active ring is (haze, pulses)
+    haloCX = rcx; haloCY = rcy; haloLow = lowF;
+    // the bubble's contour: organic (slow noise) and pushed out where the speech has energy. Highs bulge the top,
+    // lows the sides. Eased per band so it swells and relaxes instead of jittering. Shared with the board waves.
+    this.bandE = this.bandE || new Float32Array(8);
+    for (let k = 0; k < 8; k++) this.bandE[k] += ((state === "listening" ? B[k] : 0) - this.bandE[k]) * Math.min(1, dt * (B[k] > this.bandE[k] ? 6 : 2));
+    const bandE = this.bandE;
+    bubbleShape = af => {
+      const bf = clamp(1 - Math.abs(fract(af + 0.5) - 0.25) * 4, 0, 1) * 7, k0 = Math.min(6, Math.floor(bf)), kf = bf - k0;
+      const e = bandE[k0] * (1 - kf) + bandE[k0 + 1] * kf;
+      const th = af * 6.283;
+      return 1 + 0.05 * (2 * vnoise2(Math.cos(th) * 1.7 + T * 0.25, Math.sin(th) * 1.7 - T * 0.18) - 1) + 0.16 * e * e;
+    };
     thinkMix += ((state === "thinking" ? 1 : 0) - thinkMix) * Math.min(1, dt * 6);
     const hide = smoothstep(0, 1, thinkMix);                         // thinking: the ring steps aside for the wipe
-    drawM(c => mistFrac(c, 0.05 * L), null, sub);
+    if (lowF > 0.001) { drawOrbMorph(lowF, L); drawOrb(lowF, L); } else drawM(c => mistFrac(c, 0.05 * L), null, sub);   // listening: the M becomes the orb
     streamM(L, O); inflowM(L);
     if (P.en > 0.08) shedM(dt, 1.2 * P.en * vb.shed, 1.7, L);        // pointer gusts only; the voice lives in the stream
     // where the shed stream crosses the ring: bucket the live particles by angle around the M's center
     const NB = 72; if (!this.bins) { this.bins = new Float32Array(NB); this.bins2 = new Float32Array(NB); this.hit = new Float32Array(NB); }
     const bins = this.bins, bins2 = this.bins2; bins.fill(0);
     for (const p of PARTS) {
-      const dx = p.x - cx, dy = p.y - cy, rel = Math.hypot(dx, dy) / Rb;
+      const dx = p.x - rcx, dy = p.y - rcy, rel = Math.hypot(dx, dy) / Rb;
       if (rel < 0.55 || rel > 1.7) continue;
       const w = 1 - Math.abs(rel - 1) / 0.7;
       bins[Math.floor(fract(Math.atan2(dy, dx) / 6.283) * NB)] += w * (1 - p.age / p.life) * 0.5;
     }
     for (let q = 0; q < STREAM.length; q += 3) {
-      const dx = STREAM[q] - cx, dy = STREAM[q + 1] - cy, rel = Math.hypot(dx, dy) / Rb;
+      const dx = STREAM[q] - rcx, dy = STREAM[q + 1] - rcy, rel = Math.hypot(dx, dy) / Rb;
       if (rel < 0.55 || rel > 1.7) continue;
       const w = 1 - Math.abs(rel - 1) / 0.7;
       bins[Math.floor(fract(Math.atan2(dy, dx) / 6.283) * NB)] += w * (1 - STREAM[q + 2]) * 0.35;
@@ -807,14 +888,14 @@ V.push({
     this.breath = (this.breath || 0) + (L - (this.breath || 0)) * Math.min(1, dt * (L > (this.breath || 0) ? 2.8 : 1.1));
     // the ring is where pulses are born: it flashes as one leaves, and tells the board where to start the wave
     this.flash = Math.max((this.flash || 0) * Math.exp(-dt * 4), O > 0.3 ? O * 0.8 : 0);
-    haloOuter = Rb * Math.max(...vb.rings.map(r => r[0])) * (1 + 0.5 * vb.spread * this.breath) + 1.5 * D;
-    haloMix = clamp(vb.shape * this.breath * 1.2, 0, 0.7);      // same recipe as the ring's own shape mix, ring-wide
+    haloOuter = (lowF > 0.5 ? RbLow : RbM) * Math.max(...vb.rings.map(r => r[0])) * (1 + 0.5 * vb.spread * this.breath) + 1.5 * D;
+    haloMix = 0;                                                  // no M-shaped waves any more
     // rotation is the ambient behaviour: full speed when quiet, easing toward a hold as speech builds
     this.spinEase = (this.spinEase || 0) + (L - (this.spinEase || 0)) * Math.min(1, dt * (L > (this.spinEase || 0) ? 4 : 1.2));
     const spinBase = vb.spin * (1 - 0.9 * clamp(this.spinEase * 1.6, 0, 1));
     const live = state === "speaking" || state === "listening";
     // answering-you mode: the rings leave the M and become inner frames around the whole screen
-    this.frame = (this.frame || 0) + ((state === "speaking" ? 1 : 0) - (this.frame || 0)) * Math.min(1, dt * 1.4);
+    this.frame = (this.frame || 0) + ((state === "speaking" ? 1 : 0) - (this.frame || 0)) * Math.min(1, dt * 5);
     const fr = smoothstep(0, 1, this.frame);
     haloFrame = fr;
     // the frame is literally the screen edge: the outermost row/column of the dot grid, sharp corners.
@@ -837,7 +918,7 @@ V.push({
       // orbital speeds: inner rings run fast, outer rings slow (∝ r^-2), and each ring turns as one body
       // (small per-cell variance) so the eye reads rotation, not drift. Louder speech spins everything a bit faster.
       const orbital = dir * Math.pow(rm, -2.2);
-      const keepF = Math.min(1, (1 + 1.6 * fr) / skip);                 // fraction of RING cells this vibe draws (more as the frame forms)
+      const keepF = Math.min(1, (1 + 1.6 * fr + 0.6 * lowF) / skip);    // fraction of RING cells this vibe draws (more for the longer frame / bubble)
       for (let n = ri; n < RING.length; n++) {
         const p = RING[n];
         if (hash(n, 5.5) > keepF) continue;
@@ -845,60 +926,76 @@ V.push({
         const coherence = vb.coherent ? 0.94 + 0.12 * p.h : p.sp;
         const a = p.a + T * spinBase * orbital * coherence * 0.25 + Math.sin(T * 0.3 + p.h * 6.283) * 0.003;
         const af = fract(a / 6.283);
-        // sector → band, interpolated so neighbours blend: lows at the bottom, highs at the top
-        const bf = Math.abs(fract(af + 0.25) - 0.5) * 2 * 7;
-        const k0 = Math.min(6, Math.floor(bf)), kf = bf - k0;
-        const band = live ? (vb.uniform ? L : B[k0] * (1 - kf) + B[k0 + 1] * kf) : 0;
-        const kw = bf / 7;
-        const pushW = vb.uniform ? 1 : Math.max(0, 1 - kw * 1.6);
-        const sizeW = vb.uniform ? 1 : Math.max(0, 1 - Math.abs(kw - 0.5) * 2.4);
-        const jitW = vb.uniform ? 0 : Math.max(0, (kw - 0.5) * 2);
+        // sector → band, interpolated so neighbours blend. Around the M: lows at the bottom, highs at the top.
+        // On the bubble the bottom is off-screen, so lows sit at both sides and highs on top.
+        const bfM = Math.abs(fract(af + 0.25) - 0.5) * 2 * 7;
+        const bfL = clamp(1 - Math.abs(fract(af + 0.5) - 0.25) * 4, 0, 1) * 7;
+        const bandOf = bf => { const k0 = Math.min(6, Math.floor(bf)), kf = bf - k0; return live ? (vb.uniform ? L : B[k0] * (1 - kf) + B[k0 + 1] * kf) : 0; };
+        const bandM = bandOf(bfM), bandL = bandOf(bfL);
+        const kwM = bfM / 7, kwL = bfL / 7;
+        const pushW = vb.uniform ? 1 : Math.max(0, 1 - kwM * 1.6);
+        const sizeWOf = kw => vb.uniform ? 1 : Math.max(0, 1 - Math.abs(kw - 0.5) * 2.4);
+        const jitW = vb.uniform ? 0 : Math.max(0, (kwM - 0.5) * 2);
         const wob = vnoise2(Math.cos(a) * 1.6 + T * 0.4, Math.sin(a) * 1.6 + T * 0.3);
-        p.push = (p.push || 0) + (band * pushW - (p.push || 0)) * Math.min(1, dt * (band * pushW > (p.push || 0) ? 3.5 : 1.4));
-        const hit = hitAt(af) * (1 - fr);
-        const jit = jitW * band * (hash(n, Math.floor(T * 9)) - 0.5) * vb.jit * D;
-        // spacing: rings drift apart from the unit radius as loudness builds; thickness: each ring's
-        // radial scatter widens with its band, so a loud low end fattens the bottom of the ring
+        p.push = (p.push || 0) + (bandM * pushW - (p.push || 0)) * Math.min(1, dt * (bandM * pushW > (p.push || 0) ? 3.5 : 1.4));
+        const hit = hitAt(af);                                          // the stream only hits the ring around the M
+        const jit = jitW * bandM * (hash(n, Math.floor(T * 9)) - 0.5) * vb.jit * D;
         const rmE = 1 + (rm - 1) * (1 + vb.spread * this.breath);
-        const thick = 0.035 + vb.thick * (0.3 * this.breath + 0.7 * band);
-        const mix = clamp(vb.shape * (p.push * 1.1 + this.breath * 0.45), 0, 0.7);
-        const shp = shapeAt(af, mix);                                   // the pulse pushes out in the M's shape
         let tF = 0, fadeA = 1, fadeS = 1;
         if (vb.fade) {
           tF = Math.pow(p.r0, vb.fade.pow);                         // most cells near the inner edge
           fadeA = Math.pow(1 - tF, 2) + 0.04;                       // dimmer further out
           fadeS = 1 - 0.5 * tF;                                     // smaller further out
         }
-        let r = Rb * rmE * shp * (1 + tF * (vb.fade ? vb.fade.width * (1 + 0.6 * this.breath) : 0) + thick * (p.r0 - 0.5) * 2 + vb.wob * (wob - 0.5) + vb.breath * this.breath * 0.4)
-              + Rb * (0.03 * O * p.h + vb.hitPush * hit * (0.6 + 0.8 * p.h)) + jit;
-        let gx = cx + Math.cos(a) * r, gy = cy + Math.sin(a) * r;
-        if (fr > 0.001) {                                                // blend toward the screen edge
-          // the densest cells sit on the outermost row; deeper cells (tF) fade inward. The voice presses the band inward.
+        const idleA = state === "idle" ? 0.3 : 0;
+        // one ring cell, at one of the three geometries. w = that geometry's crossfade weight.
+        const emit = (gi, gj, w, band, kw, sizeMul, aMul, hitv) => {
+          if (bulge(gi, gj, BO)) { gi += Math.round(BO[0]); gj += Math.round(BO[1]); }
+          const f = (0.32 + 0.3 * p.h) * fadeS * (0.8 + vb.size * band * sizeWOf(kw) + 0.15 * band + 0.5 * hitv + 0.3 * this.flash) * sizeMul;
+          const al = ((idleA || vb.aBase + 0.1 + vb.aBand * Math.max(band, L * 0.5)) + 0.4 * hitv + 0.35 * this.flash) * fadeA * aMul * (1 - hide) * w;
+          cell(gi, gj, f, al, false, col(clamp(0.98 - 0.5 * kw - 0.15 * hitv + 0.12 * tF, 0.42, 1)));
+        };
+        const wM = (1 - fr) * (1 - lowF), wB = lowF * (1 - fr), wF = fr;
+        // 1. the ring around the M (idle, and the base everything else fades from)
+        if (wM > 0.01) {
+          const thick = 0.035 + vb.thick * (0.3 * this.breath + 0.7 * bandM);
+          const shp = 1;                                                // round: the M-shaped push is retired
+          const r = RbM * rmE * shp * (1 + tF * (vb.fade ? vb.fade.width * (1 + 0.6 * this.breath) : 0) + thick * (p.r0 - 0.5) * 2 + vb.wob * (wob - 0.5) + vb.breath * this.breath * 0.4)
+                  + RbM * (0.03 * O * p.h + vb.hitPush * hit * (0.6 + 0.8 * p.h)) + jit;
+          let gi = Math.round(cx + Math.cos(a) * r), gj = Math.round(cy + Math.sin(a) * r);
+          let blown = false;
+          if (hit > 0.02) {
+            gi += Math.round(hit * vb.hitCarry * D * (0.5 + p.h));
+            gj += Math.round((hash(n, Math.floor(T * 5)) - 0.5) * vb.hitCarry * D * hit);
+            if (vb.hitBlow > 0 && hit > 0.45 && hash(n, 71) < (hit - 0.45) * vb.hitBlow) {
+              if (Math.random() < 0.06) spawn(gi, gj, (5 + 6 * Math.random()) * D, (Math.random() - 0.5) * 3 * D, 1.4 + Math.random(), 0.3 + 0.2 * p.h);
+              blown = true;
+            }
+          }
+          if (!blown && !(vb.spark > 0 && jitW > 0 && bandM > 0.5 && hash(n, 3 + Math.floor(T * 9)) < bandM * jitW * vb.spark)) emit(gi, gj, wM, bandM, kwM, 1, 1, hit);
+        }
+        // 2. the listening bubble: round, on the bottom edge, its own band map, no stream hits
+        if (wB > 0.01) {
+          const thick = 0.035 + vb.thick * (0.3 * this.breath + 0.7 * bandL);
+          const r = RbLow * rmE * bubbleShape(af) * (1 + tF * 0.16 * (1 + 0.6 * this.breath) + thick * (p.r0 - 0.5) * 2 + vb.breath * this.breath * 0.4) + RbLow * 0.03 * O * p.h;
+          emit(Math.round(bcx + Math.cos(a) * r), Math.round(bcy + Math.sin(a) * r), wB, bandL, kwL, 1.2, 1.7, 0);
+        }
+        // 3. the answering frame: the literal screen edge. The densest cells sit on the outermost row; deeper cells (tF)
+        // fade inward. The voice presses the band inward.
+        if (wF > 0.01) {
+          const thick = 0.035 + vb.thick * (0.3 * this.breath + 0.7 * bandM);
           const depth = FDEPTH * (1 + 0.6 * this.breath) * tF + ri * 2.5 * D + thick * 6 * D * (p.r0 - 0.5) + p.push * 3 * D;
           rectPt(af + uOff, Math.max(0, depth), RP);
-          gx = gx * (1 - fr) + RP[0] * fr; gy = gy * (1 - fr) + RP[1] * fr;
+          emit(Math.round(RP[0]), Math.round(RP[1]), wF, bandM, kwM, 1.25, 1.6, 0);
         }
-        let gi = Math.round(gx), gj = Math.round(gy);
-        if (hit > 0.02) {
-          gi += Math.round(hit * vb.hitCarry * D * (0.5 + p.h));
-          gj += Math.round((hash(n, Math.floor(T * 5)) - 0.5) * vb.hitCarry * D * hit);
-          if (vb.hitBlow > 0 && hit > 0.45 && hash(n, 71) < (hit - 0.45) * vb.hitBlow) {
-            if (Math.random() < 0.06) spawn(gi, gj, (5 + 6 * Math.random()) * D, (Math.random() - 0.5) * 3 * D, 1.4 + Math.random(), 0.3 + 0.2 * p.h);
-            continue;
-          }
-        }
-        if (bulge(gi, gj, BO)) { gi += Math.round(BO[0]); gj += Math.round(BO[1]); }
-        if (vb.spark > 0 && jitW > 0 && band > 0.5 && hash(n, 3 + Math.floor(T * 9)) < band * jitW * vb.spark) continue;
-        const f = (0.32 + 0.3 * p.h) * fadeS * (0.8 + vb.size * band * sizeW + 0.15 * band + 0.5 * hit + 0.3 * this.flash) * (1 + 0.25 * fr);
-        cell(gi, gj, f, ((state === "idle" ? 0.3 : vb.aBase + 0.1 + vb.aBand * Math.max(band, L * 0.5)) + 0.4 * hit + 0.35 * this.flash) * fadeA * (1 + 0.6 * fr) * (1 - hide), false, col(clamp(0.98 - 0.5 * kw - 0.15 * hit + 0.12 * tF, 0.42, 1)));
       }
     }
     // outer haze: past the last ring the board dots lift and fade out as a gradient, so the orb
     // has an atmosphere instead of an edge. Wider and brighter with the voice, extended where the stream hits.
-    if (vb.haze > 0 && hide < 0.98) {
+    if (vb.haze > 0 && hide < 0.98 && lowF < 0.98 && fr < 0.98) {
       const Rout = Rb * Math.max(...vb.rings.map(r => r[0])) * (1 + 0.5 * vb.breath * this.breath) + 1.5 * D;
       const reach = Rout * (0.9 + 0.5 * L);
-      const amp = vb.haze * (0.55 + 0.9 * L) * (1 - hide);
+      const amp = vb.haze * (0.55 + 0.9 * L) * (1 - hide) * (1 - lowF) * (1 - fr);
       const i0 = Math.max(0, Math.floor(cx - Rout - reach)), i1 = Math.min(cols, Math.ceil(cx + Rout + reach));
       const j0 = Math.max(0, Math.floor(cy - Rout - reach)), j1 = Math.min(rows, Math.ceil(cy + Rout + reach));
       for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) {
@@ -1156,41 +1253,78 @@ function stepLayout(dt) {
 function setColor(v) { COLOR = v == null ? !COLOR : v; boardKey = ""; syncGrid(); }
 // mock answer cards for the "left" layout, drawn on the canvas so the stage wall carries them too
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+let speakT = 0;   // seconds since the answer started (speaking state), drives the answer's reveal
+// pixels "delivered" from the M to an element that is appearing: a short white stream that travels from the M's centre
+// to the element's anchor and thins out as the element lands. Drawn straight on the frame, grid-snapped.
+function deliver(c, mx, my, ax, ay, q) {
+  if (q <= 0 || q >= 1) return;
+  const N = 16;
+  for (let k = 0; k < N; k++) {
+    const pk = clamp(q * 1.6 - k * 0.035, 0, 1); if (pk <= 0 || pk >= 1) continue;
+    const e = pk * pk * (3 - 2 * pk), h = hash(k * 3.1, 7.7);
+    const px = mx + (ax - mx) * e, py = my + (ay - my) * e - Math.sin(e * Math.PI) * 26 * (h - 0.3);
+    const gx = Math.floor(px / cs) * cs + cs / 2, gy = Math.floor(py / cs) * cs + cs / 2;
+    const sz = cs * (0.55 - 0.35 * e);
+    c.globalAlpha = (1 - e) * 0.9; c.fillStyle = "#fff"; c.beginPath(); c.arc(gx, gy, sz / 2, 0, 6.283); c.fill();
+  }
+}
 function drawCards(c) {
   const answer = LAYOUT === "answer";
-  const x0 = answer ? W * 0.27 : W * 0.5, w = answer ? W * 0.46 : W * 0.42, u = Math.min(W, H) / 1080;   // u: scale relative to a 1080p frame
+  const x0 = answer ? W * 0.3 : W * 0.5, w = answer ? W * 0.5 : W * 0.42, u = Math.min(W, H) / 1080;   // u: scale relative to a 1080p frame
   const reveal = answer ? cardsT : 99;                              // answer layout: things appear over time
-  const show = at => Math.min(1, Math.max(0, (reveal - at) / 0.5));  // 0..1 fade for an element that lands at `at` seconds
   const font = (px, wgt = "") => `${wgt} ${Math.round(px * u)}px -apple-system, Inter, system-ui, sans-serif`;
   c.save(); c.setTransform(DPR, 0, 0, DPR, 0, 0); c.globalAlpha = 1; c.textBaseline = "alphabetic";
-  let y = answer ? H * 0.2 : H * 0.24;
+  let y = answer ? H * 0.16 : H * 0.24;
   if (answer) {
-    c.globalAlpha = show(0.1); c.fillStyle = COLOR ? PAL[18] : "#9aa0aa"; c.font = font(13); c.fillText("F L U I D", x0, y); y += 48 * u;
-    c.globalAlpha = show(0.35); c.fillStyle = "#fff"; c.font = font(46, "500"); c.fillText("Let’s take a look.", x0, y); y += 40 * u;
-    c.globalAlpha = show(0.7); c.fillStyle = "#8a8f99"; c.font = font(17); c.fillText("Can you tell me what we’ve done on the website this week?", x0, y); y += 44 * u;
+    // everything comes from the M: each element eases in along the line from the M to its place, and a short
+    // pixel stream runs from the M to it as it lands, so the answer reads as handed over rather than appearing.
+    const mx = (cx + 0.5) * cs, my = (cy + 0.5) * cs;
+    const item = (at, clock, ax, ay, draw) => {
+      const q = Math.min(1, Math.max(0, (clock - at) / 0.55)); if (q <= 0) return;
+      const e = 1 - Math.pow(1 - q, 3);
+      const ox = (mx - ax) * 0.12 * (1 - e), oy = (my - ay) * 0.12 * (1 - e);
+      c.globalAlpha = e; draw(ax + ox, ay + oy, e);
+      deliver(c, mx, my, ax, ay, q);
+    };
+    item(0.1, reveal, x0, y, (x, yy) => { c.fillStyle = COLOR ? PAL[18] : "#9aa0aa"; c.font = font(13, "600"); c.fillText("M I S T", x, yy); });
+    y += 44 * u;
+    // what it heard, quietly
+    item(0.35, reveal, x0, y, (x, yy) => { c.fillStyle = "#8a8f99"; c.font = font(20, "400"); c.fillText("“What did we change on the site this week, and did it work?”", x, yy); });
+    y += 46 * u;
+    // the work, small
     const steps = ["Querying your database", "Checking your store data", "Summarising the change log"];
     steps.forEach((t, n) => {
-      const at = 1.3 + n * 0.9, a = show(at); if (a <= 0) return;
-      const done = reveal > at + 1.1;
-      c.globalAlpha = a; c.fillStyle = COLOR ? PAL[14] : "#fff"; c.beginPath(); c.arc(x0 + 5 * u, y - 6 * u, 3.5 * u, 0, 6.283); c.fill();
-      c.fillStyle = "#c9cdd4"; c.font = font(15); c.fillText(t, x0 + 20 * u, y);
-      c.fillStyle = "#6b7079"; c.textAlign = "right"; c.fillText(done ? "Done" : "…", x0 + w, y); c.textAlign = "left";
-      y += 28 * u;
+      const at = 1.1 + n * 0.8, yy0 = y + n * 26 * u;
+      item(at, reveal, x0, yy0, (x, yy) => {
+        const done = reveal > at + 1.1;
+        c.fillStyle = COLOR ? PAL[14] : "#fff"; c.beginPath(); c.arc(x + 5 * u, yy - 5 * u, 3 * u, 0, 6.283); c.fill();
+        c.fillStyle = done ? "#8a8f99" : "#c9cdd4"; c.font = font(14); c.fillText(t, x + 18 * u, yy);
+        c.fillStyle = "#6b7079"; c.textAlign = "right"; c.fillText(done ? "Done" : "…", x + w, yy); c.textAlign = "left";
+      });
     });
-    y += 14 * u;
-    const aCard = show(4.4);
-    if (aCard > 0) {
-      c.globalAlpha = aCard;
-      const hCard = 150 * u; y += (1 - aCard) * 14 * u;                  // slides up as it fades in
-      c.fillStyle = "rgba(10,10,14,0.72)"; c.strokeStyle = "#23262c"; c.lineWidth = 1;
-      roundRect(c, x0, y, w, hCard, 16 * u); c.fill(); c.stroke();
-      c.fillStyle = COLOR ? PAL[20] : "#8a7cf0"; c.font = font(11); c.fillText("S U M M A R Y", x0 + 24 * u, y + 36 * u);
-      c.fillStyle = "#fff"; c.font = font(18, "600"); c.fillText("MIST", x0 + 24 * u, y + 66 * u);
+    y += steps.length * 26 * u + 30 * u;
+    // the answer: headline first, then the numbers as three small cards, then one line of context
+    const sp = speakT;
+    item(0.25, sp, x0, y, (x, yy) => { c.fillStyle = "#fff"; c.font = font(44, "500"); c.fillText("Three changes shipped. Conversion is up 12.4%.", x, yy); });
+    y += 38 * u;
+    const stats = [["3", "changes shipped"], ["+12.4%", "checkout conversion"], ["$48.2k", "added revenue"]];
+    const gap = 14 * u, cw = (w - gap * 2) / 3, ch = 108 * u;
+    stats.forEach(([big, small], n) => {
+      const at = 0.8 + n * 0.28, ax = x0 + n * (cw + gap), ay = y;
+      item(at, sp, ax, ay, (x, yy, e) => {
+        c.fillStyle = "rgba(10,10,14,0.72)"; c.strokeStyle = "#23262c"; c.lineWidth = 1;
+        roundRect(c, x, yy, cw, ch, 14 * u); c.fill(); c.stroke();
+        c.fillStyle = "#fff"; c.font = font(34, "600"); c.fillText(big, x + 20 * u, yy + 52 * u);
+        c.fillStyle = COLOR ? PAL[18] : "#9aa0aa"; c.font = font(13); c.fillText(small.toUpperCase(), x + 20 * u, yy + 82 * u);
+      });
+    });
+    y += ch + 34 * u;
+    item(1.9, sp, x0, y, (x, yy) => {
       c.fillStyle = "#b6bac2"; c.font = font(17);
-      const msg = "Pulling the actual change log from the reporting database now.";
-      const chars = Math.min(msg.length, Math.floor((reveal - 4.6) * 38));   // types itself out
-      if (chars > 0) c.fillText(msg.slice(0, chars), x0 + 24 * u, y + 100 * u);
-    }
+      const msg = "Most of it came from the new checkout flow. From your change log and store data.";
+      const chars = Math.min(msg.length, Math.floor((sp - 1.9) * 42));   // types itself out
+      if (chars > 0) c.fillText(msg.slice(0, chars), x, yy);
+    });
     c.restore(); return;
   }
   c.fillStyle = COLOR ? PAL[18] : "#9aa0aa"; c.font = `${Math.round(13 * u)}px -apple-system, Inter, system-ui, sans-serif`;
@@ -1265,6 +1399,7 @@ let last = performance.now();
 function frame(now) { render(now); requestAnimationFrame(frame); }
 function render(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05); last = now; T += dt; snapT += dt;
+  speakT = state === "speaking" ? speakT + dt : 0;
   stepDemo(dt); stepLayout(dt);
   voice.update(T, dt);
   P.en *= Math.exp(-dt * 2.2);

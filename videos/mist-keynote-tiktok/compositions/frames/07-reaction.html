@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: transparent; color: #f4f1fa; font-family: Montserrat, system-ui, sans-serif; overflow: hidden; }
+        #root .vig { position: absolute; inset: 0; background: radial-gradient(ellipse 75% 65% at 50% 45%, rgba(7,6,11,0) 55%, rgba(7,6,11,0.6) 100%); }
+        #root .line { position: absolute; left: 90px; right: 90px; bottom: 360px; margin: 0; font-weight: 900; font-size: 124px; line-height: 0.96; letter-spacing: -0.03em; }
+        #root .line .a { display: block; color: #cfc8dc; font-weight: 800; font-size: 96px; }
+        #root .line .b { display: block; color: #ff6fd8; margin-top: 18px; line-height: 1.05; }
+      </style>
+      <div data-hf-id="hf-bc0c" id="root" data-composition-id="reaction" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-e4a6" class="vig"></div>
+        <p data-hf-id="hf-j7r1" class="line"><span data-hf-id="hf-hx80" class="a" id="a">It just…</span><span data-hf-id="hf-yi95" class="b" id="b">knows.</span></p>
+      </div>
+      <script>
+        (() => {
+          const tl = gsap.timeline({ paused: true });
+          // slide-up crossfade, a beat of breath, then the payoff word lands
+          tl.from("#a", { autoAlpha: 0, y: 40, duration: 0.7, ease: "expo.out" }, 0.6);
+          tl.from("#b", { autoAlpha: 0, y: 30, scale: 0.94, duration: 0.6, ease: "back.out(1.8)" }, 2.0);
+          window.__timelines["reaction"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

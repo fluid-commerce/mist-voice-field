@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: transparent; color: #f4f1fa; font-family: Montserrat, system-ui, sans-serif; overflow: hidden; }
+        #root .vig { position: absolute; inset: 0; background: radial-gradient(ellipse 70% 60% at 50% 45%, rgba(7,6,11,0) 55%, rgba(7,6,11,0.62) 100%); }
+        #root .tag { position: absolute; left: 90px; top: 240px; font: 700 24px/1 "JetBrains Mono", monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #9a93a8; display: flex; align-items: center; gap: 18px; }
+        #root .tag i { display: block; width: 10px; height: 10px; border-radius: 50%; background: #ff6fd8; }
+        #root .stack { position: absolute; left: 90px; right: 90px; bottom: 340px; }
+        #root .line { font-weight: 900; font-size: 104px; line-height: 0.98; letter-spacing: -0.02em; margin: 0; }
+        #root .line.dim { color: #cfc8dc; font-weight: 800; font-size: 84px; }
+        #root .slot { position: relative; height: 130px; margin-top: 14px; }
+        #root .slot .tok { position: absolute; left: 0; top: 0; margin: 0; font-weight: 900; font-size: 116px; line-height: 1; letter-spacing: -0.025em; color: #f4f1fa; opacity: 0; }
+        #root .slot .tok.hot { color: #ff6fd8; }
+        #root .rule { position: absolute; left: 90px; bottom: 300px; height: 4px; width: 900px; background: #ff6fd8; transform-origin: left center; transform: scaleX(0); }
+      </style>
+      <div data-hf-id="hf-srfg" id="root" data-composition-id="hook" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-e4a6" class="vig"></div>
+        <div data-hf-id="hf-ny6m" class="tag" id="tag"><i data-hf-id="hf-wt6k"></i><span data-hf-id="hf-l9te">Fluid keynote · Mist</span></div>
+        <div data-hf-id="hf-d1zs" class="stack">
+          <p data-hf-id="hf-bg6x" class="line dim" id="l1">what if your store</p>
+          <p data-hf-id="hf-ropi" class="line" id="l2">could just…</p>
+          <div data-hf-id="hf-fv78" class="slot">
+            <p data-hf-id="hf-xto4" class="tok" id="t1" data-layout-allow-overlap="">listen?</p>
+            <p data-hf-id="hf-8gni" class="tok" id="t2" data-layout-allow-overlap="">think?</p>
+            <p data-hf-id="hf-g949" class="tok hot" id="t3" data-layout-allow-overlap="">answer you?</p>
+          </div>
+        </div>
+        <div data-hf-id="hf-u4he" class="rule" id="rule"></div>
+      </div>
+      <script>
+        (() => {
+          const tl = gsap.timeline({ paused: true });
+          tl.from("#tag", { autoAlpha: 0, x: -24, duration: 0.5, ease: "power3.out" }, 0.2);
+          tl.from("#l1", { autoAlpha: 0, y: 40, duration: 0.55, ease: "power3.out" }, 0.4);
+          tl.from("#l2", { autoAlpha: 0, y: 60, duration: 0.6, ease: "expo.out" }, 1.0);
+          // token swaps by hard cut, then the payoff springs in
+          tl.set("#t1", { opacity: 1 }, 2.0);
+          tl.set("#t1", { opacity: 0 }, 2.75);
+          tl.set("#t2", { opacity: 1 }, 2.75);
+          tl.set("#t2", { opacity: 0 }, 3.5);
+          tl.set("#t3", { opacity: 1 }, 3.5);
+          tl.from("#t3", { scale: 0.86, y: 18, duration: 0.55, ease: "back.out(2.2)" }, 3.5);
+          tl.to("#rule", { scaleX: 1, duration: 0.7, ease: "expo.out" }, 3.6);
+          window.__timelines["hook"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

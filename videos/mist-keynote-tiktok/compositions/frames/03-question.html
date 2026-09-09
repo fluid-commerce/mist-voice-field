@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: transparent; color: #f4f1fa; font-family: Montserrat, system-ui, sans-serif; overflow: hidden; }
+        #root .vig { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(7,6,11,0) 50%, rgba(7,6,11,0.7) 100%); }
+        #root .who { position: absolute; left: 90px; top: 240px; font: 700 24px/1 "JetBrains Mono", monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #9a93a8; }
+        #root .q { position: absolute; left: 90px; right: 90px; bottom: 330px; margin: 0; font-weight: 800; font-size: 78px; line-height: 1.06; letter-spacing: -0.02em; }
+        #root .q .ch { opacity: 0; }
+        #root .q .hot { color: #ffb0ea; }
+        #root .caret { display: inline-block; width: 8px; height: 0.9em; background: #ff6fd8; vertical-align: -0.12em; margin-left: 6px; }
+      </style>
+      <div data-hf-id="hf-5n73" id="root" data-composition-id="question" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-e4a6" class="vig"></div>
+        <div data-hf-id="hf-vq2d" class="who" id="who">he asks</div>
+        <p data-hf-id="hf-dm5l" class="q" id="q" data-layout-allow-overlap=""><span data-hf-id="hf-mxlo" id="txt" data-layout-allow-overlap=""></span><span data-hf-id="hf-fir1" class="caret" id="caret"></span></p>
+      </div>
+      <script>
+        (() => {
+          const text = "Mist, what did we change on the site this week — and did it work?";
+          const host = document.getElementById("txt");
+          const chars = [];
+          for (const c of text) {
+            const s = document.createElement("span"); s.className = "ch" + (/did it work\?$/.test(text.slice(0, chars.length + 1)) ? "" : "");
+            s.textContent = c; s.setAttribute("data-layout-allow-overlap", ""); host.appendChild(s); chars.push(s);
+          }
+          // the payoff phrase goes pink
+          const start = text.indexOf("did it work?");
+          for (let i = start; i < text.length; i++) chars[i].classList.add("hot");
+          const tl = gsap.timeline({ paused: true });
+          tl.from("#who", { autoAlpha: 0, x: -20, duration: 0.5, ease: "power3.out" }, 0.2);
+          // typed like a human: steady, with a breath at the dash
+          const perChar = 0.052;
+          chars.forEach((s, i) => { const t = 0.6 + i * perChar + (i > text.indexOf("—") ? 0.35 : 0); tl.set(s, { opacity: 1 }, t); });
+          const end = 0.6 + chars.length * perChar + 0.35;
+          tl.to("#caret", { autoAlpha: 0, duration: 0.01, repeat: Math.max(0, Math.floor((8 - 0.4) / 0.9) - 1), repeatDelay: 0.45, yoyo: true }, 0.4);
+          tl.from("#q", { y: 20, duration: 0.6, ease: "power3.out" }, 0.5);
+          window.__timelines["question"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

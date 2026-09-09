@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mist · Orbloom lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="vendor/orbloom/orb.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #8a8f99; font: 12px/1.4 -apple-system, Inter, system-ui, sans-serif; overflow: hidden; }
+  #c { position: fixed; inset: 0; display: block; }
+  /* the orb renders into its own circle canvas off to the side; every frame it is composited into #c */
+  #orbHost { position: fixed; left: -9999px; top: 0; }
+  .hud { position: fixed; left: 18px; top: 16px; letter-spacing: .04em; display: flex; gap: 14px; align-items: center; }
+  .hud b { color: #fff; font-style: italic; font-weight: 800; font-size: 14px; }
+  .chips { position: fixed; left: 18px; bottom: 16px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 70vw; }
+  .chip { padding: 5px 9px; border: 1px solid #23262c; border-radius: 999px; color: #9a93a8; cursor: pointer; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .chip.on { background: #ff6fd8; color: #0a0810; border-color: #ff6fd8; font-weight: 700; }
+  .chip kbd { font: inherit; color: #5a5f6a; margin-right: 6px; }
+  .chip.on kbd { color: #4a1040; }
+  body.clean .hud, body.clean .chips { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="orbHost"><canvas id="orb" class="orb-canvas"></canvas></div>
+<div class="hud"><b>MIST</b><span id="tName">orbloom</span><span id="tState"></span></div>
+<div class="chips" id="chips"></div>
+
+<script type="module">
+import { createOrb, createOrbTheme, orbVariantIds } from "./vendor/orbloom/index.js";
+
+const Q = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+const c = $("c"), ctx = c.getContext("2d");
+const DPR = Math.min(2, devicePixelRatio || 1);
+let W = 0, H = 0;
+function resize() {
+  W = innerWidth; H = innerHeight;
+  c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); c.style.width = W + "px"; c.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const dia = Math.round(Math.min(W, H) * ORB_FRAC);
+  $("orb").style.width = $("orb").style.height = dia + "px";
+  orb && orb.resize();
+}
+const ORB_FRAC = +(Q.get("size") || 0.62);
+
+// ---- themes: Mist pinks/violets on top of a few of the package's procedural structures, plus the raw presets
+const MIST_COLORS = { base: "#120a1c", interior: "#050308", accents: ["#ff6fd8", "#a855f7", "#ffffff"] };
+const THEMES = [
+  ["mist nebula", () => createOrbTheme({ preset: "nebula-violet-02", id: "mist-nebula", colors: MIST_COLORS, appearance: { intensity: 0.9, detail: 0.7, glass: 0.35, glow: 0.8 }, motion: { speed: 0.7, drift: 0.6 }, audioResponse: { brightness: 1.2, motion: 0.6, pulse: 0.9 } })],
+  ["mist spiral", () => createOrbTheme({ preset: "spiral-pink-01", id: "mist-spiral", colors: MIST_COLORS, appearance: { intensity: 0.85, detail: 0.75, glass: 0.3, glow: 0.7 }, motion: { speed: 0.65, drift: 0.5 }, audioResponse: { brightness: 1.1, motion: 0.7, pulse: 0.8 } })],
+  ["mist core", () => createOrbTheme({ preset: "core-blue-02", id: "mist-core", colors: MIST_COLORS, appearance: { intensity: 0.9, detail: 0.6, glass: 0.45, glow: 0.85 }, motion: { speed: 0.6, drift: 0.5 }, audioResponse: { brightness: 1.3, motion: 0.5, pulse: 1 } })],
+  ...orbVariantIds.filter(id => /pink|violet/.test(id)).map(id => [id, () => id]),
+];
+let themeIx = +(Q.get("theme") || 0);
+
+// ---- the orb
+let orb = null;
+function makeOrb() {
+  if (orb) orb.destroy();
+  orb = createOrb($("orb"), { quality: "high", state, theme: THEMES[themeIx][1](), reducedMotion: false });
+  $("tName").textContent = THEMES[themeIx][0];
+  [...$("chips").children].forEach(el => { if (el.dataset.t != null) el.classList.toggle("on", +el.dataset.t === themeIx); });
+}
+window.addEventListener("resize", resize);
+
+// ---- states + a simulated voice (syllable bursts), so the page plays with no permissions
+const STATES = ["idle", "listening", "thinking", "speaking"];
+let state = Q.get("state") || "listening", gain = 1, level = 0, sim = true, T = 0, last = performance.now();
+let syl = 0, sylT = 0, LAYOUT = "center", QUIET = false, DEMO = null, demoIx = -1, demoT = 0;
+const SCRIPT = [["idle", false, 4], ["listening", true, 3], ["listening", false, 6], ["thinking", true, 4], ["speaking", false, 11], ["speaking", true, 2], ["idle", false, 5]];
+function setState(s) {
+  if (!STATES.includes(s)) return;
+  state = s; orb && orb.setState(s);
+  $("tState").textContent = "· " + s;
+  [...$("chips").children].forEach(el => { if (el.dataset.s) el.classList.toggle("on", el.dataset.s === s); });
+}
+function setQuiet(q) { QUIET = q; gain = q ? 0.25 : 1; $("quietChip").classList.toggle("on", q); }
+function setLayout() {}
+function playDemo() { DEMO = true; demoIx = -1; demoT = 0; $("demoChip").classList.add("on"); }
+function stopDemo() { DEMO = null; $("demoChip").classList.remove("on"); }
+function simVoice(dt) {
+  // speech-ish envelope: bursts of syllables while listening/speaking, a murmur otherwise
+  const talking = state === "speaking" || state === "listening";
+  sylT -= dt;
+  if (sylT <= 0) { syl = talking ? 0.45 + Math.random() * 0.55 : 0.05 + Math.random() * 0.1; sylT = 0.12 + Math.random() * 0.22; if (talking && Math.random() < 0.18) sylT += 0.4 + Math.random() * 0.5; }
+  const target = syl * gain;
+  level += (target - level) * Math.min(1, dt * (target > level ? 18 : 6));
+  return level;
+}
+
+// ---- frame: black, composite the orb into the middle of #c (the stage reads #c as the wall texture)
+function frame(now) {
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now; T += dt;
+  if (DEMO) { demoT -= dt; if (demoT <= 0) { demoIx = (demoIx + 1) % SCRIPT.length; const [st, q, secs] = SCRIPT[demoIx]; setState(st); setQuiet(q); demoT = secs; } }
+  if (sim && orb) orb.setAudioLevel(simVoice(dt));
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  const o = $("orb"), dia = o.clientWidth;
+  if (dia > 0 && o.width > 0) ctx.drawImage(o, (W - dia) / 2, (H - dia) / 2, dia, dia);
+  requestAnimationFrame(frame);
+}
+
+// ---- UI
+STATES.forEach((s, n) => { const b = document.createElement("span"); b.className = "chip"; b.dataset.s = s; b.innerHTML = `<kbd>${"QWER"[n]}</kbd>${s}`; b.onclick = () => { stopDemo(); setState(s); }; $("chips").appendChild(b); });
+{ const q = document.createElement("span"); q.className = "chip"; q.id = "quietChip"; q.innerHTML = `<kbd>U</kbd>quiet`; q.onclick = () => setQuiet(!QUIET); $("chips").appendChild(q);
+  const d = document.createElement("span"); d.className = "chip"; d.id = "demoChip"; d.innerHTML = `<kbd>P</kbd>demo`; d.onclick = () => (DEMO ? stopDemo() : playDemo()); $("chips").appendChild(d);
+  const m = document.createElement("span"); m.className = "chip"; m.id = "micChip"; m.innerHTML = `<kbd>M</kbd>mic`; m.onclick = toggleMic; $("chips").appendChild(m); }
+THEMES.forEach(([name], n) => { const b = document.createElement("span"); b.className = "chip"; b.dataset.t = n; b.innerHTML = `<kbd>${n < 9 ? n + 1 : "·"}</kbd>${name}`; b.onclick = () => { themeIx = n; makeOrb(); }; $("chips").appendChild(b); });
+async function toggleMic() {
+  if (!sim) { sim = true; orb.disconnectAudio(); $("micChip").classList.remove("on"); return; }
+  try { await orb.connectMicrophone(); sim = false; $("micChip").classList.add("on"); } catch (e) { console.warn(e); }
+}
+window.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if ("qwer".includes(k) && k) { stopDemo(); setState(STATES["qwer".indexOf(k)]); }
+  else if (k === "u") setQuiet(!QUIET);
+  else if (k === "p") DEMO ? stopDemo() : playDemo();
+  else if (k === "m") toggleMic();
+  else if (k === "h") document.body.classList.toggle("clean");
+  else if (k >= "1" && k <= "9" && +k <= THEMES.length) { themeIx = +k - 1; makeOrb(); }
+  else if (k === "arrowright") { themeIx = (themeIx + 1) % THEMES.length; makeOrb(); }
+  else if (k === "arrowleft") { themeIx = (themeIx + THEMES.length - 1) % THEMES.length; makeOrb(); }
+});
+
+if (Q.get("embed") === "1") document.body.classList.add("clean");
+resize(); makeOrb(); setState(state); resize();
+requestAnimationFrame(frame);
+// same handle the stage's state panel drives on index.html
+window.__mist = { setState, setLayout, setQuiet, playDemo, stopDemo, get state() { return state; }, get LAYOUT() { return LAYOUT; }, get QUIET() { return QUIET; }, get DEMO() { return !!DEMO; }, get orb() { return orb; } };
+</script>
+</body>
+</html>

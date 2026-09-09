@@ -1,0 +1,15 @@
+# renders and recorded footage: hundreds of MB, regenerate with videos/*/tools/record-all.sh + npx hyperframes render
+videos/*/out/
+videos/*/assets/footage/
+videos/*/snapshots/
+videos/*/node_modules/
+node_modules/
+# Blender backups
+blender/*.blend1
+# scratch stills
+stills/_*.png
+.DS_Store
+# HyperFrames caches
+videos/*/.thumbnails/
+videos/*/.hyperframes/
+videos/*/.media/

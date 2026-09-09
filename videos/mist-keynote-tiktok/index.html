@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1080, height=1920">
+    <title>Mist keynote — TikTok</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      body { margin: 0; background: #07060b; color: #f4f1fa; font-family: Montserrat, system-ui, sans-serif; }
+      #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #07060b; }
+      .clip { position: absolute; inset: 0; }
+      video.clip { width: 1080px; height: 1920px; object-fit: cover; transform-origin: 50% 55%; }
+      .frame { position: absolute; inset: 0; z-index: 2; }
+      #grain { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0.16; mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.9 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>"); }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-v63y" id="root" data-composition-id="main" data-start="0" data-width="1080" data-height="1920" data-duration="60">
+      <!-- track 0: footage recorded from the live stage and the flat wall -->
+      <video data-hf-id="hf-ur25" id="v1" class="clip" src="assets/footage/flat-hook.mp4" data-start="0" data-duration="5" data-media-start="0" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-9f5y" id="v2" class="clip" src="assets/footage/stage-wide.mp4" data-start="5" data-duration="6" data-media-start="1" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-6mx5" id="v3" class="clip" src="assets/footage/stage-presenter.mp4" data-start="11" data-duration="8" data-media-start="1" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-2kam" id="v4" class="clip" src="assets/footage/flat-listening.mp4" data-start="19" data-duration="6" data-media-start="1" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-djvt" id="v5" class="clip" src="assets/footage/flat-thinking.mp4" data-start="25" data-duration="7" data-media-start="0" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-6lx7" id="v6" class="clip" src="assets/footage/flat-answer.mp4" data-start="32" data-duration="12" data-media-start="3" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-j6af" id="v7" class="clip" src="assets/footage/stage-answer.mp4" data-start="44" data-duration="4" data-media-start="3" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-3z0e" id="v8" class="clip" src="assets/footage/stage-low.mp4" data-start="48" data-duration="6" data-media-start="1" data-track-index="0" muted playsinline></video>
+      <video data-hf-id="hf-xqi5" id="v9" class="clip" src="assets/footage/flat-idle.mp4" data-start="54" data-duration="6" data-media-start="1" data-track-index="0" muted playsinline></video>
+
+      <!-- track 1: designed type over the footage, one sub-composition per frame -->
+      <div data-hf-id="hf-f1qu" id="f-hook" class="frame" data-composition-id="hook" data-composition-src="compositions/frames/01-hook.html" data-start="0" data-duration="5" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-tep1" id="f-room" class="frame" data-composition-id="room" data-composition-src="compositions/frames/02-room.html" data-start="5" data-duration="6" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-5zkd" id="f-question" class="frame" data-composition-id="question" data-composition-src="compositions/frames/03-question.html" data-start="11" data-duration="8" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-loe2" id="f-listening" class="frame" data-composition-id="listening" data-composition-src="compositions/frames/04-listening.html" data-start="19" data-duration="6" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-blaf" id="f-thinking" class="frame" data-composition-id="thinking" data-composition-src="compositions/frames/05-thinking.html" data-start="25" data-duration="7" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-ck8s" id="f-answer" class="frame" data-composition-id="answer" data-composition-src="compositions/frames/06-answer.html" data-start="32" data-duration="16" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-y50v" id="f-reaction" class="frame" data-composition-id="reaction" data-composition-src="compositions/frames/07-reaction.html" data-start="48" data-duration="6" data-track-index="1" data-width="1080" data-height="1920"></div>
+      <div data-hf-id="hf-gp0z" id="f-lockup" class="frame" data-composition-id="lockup" data-composition-src="compositions/frames/08-lockup.html" data-start="54" data-duration="6" data-track-index="1" data-width="1080" data-height="1920"></div>
+
+      <div data-hf-id="hf-f6d6" id="grain"></div>
+    </div>
+    <script>
+      // Main timeline: slow push-ins on the held stage shots and hard-cut dips between scenes.
+      // Footage lives at the root, so its motion is authored here at global time.
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#v2", { scale: 1.0 }, { scale: 1.07, duration: 6, ease: "none" }, 5);
+      tl.fromTo("#v3", { scale: 1.04 }, { scale: 1.12, duration: 8, ease: "none" }, 11);
+      tl.fromTo("#v7", { scale: 1.0 }, { scale: 1.05, duration: 4, ease: "none" }, 44);
+      tl.fromTo("#v8", { scale: 1.02 }, { scale: 1.1, duration: 6, ease: "none" }, 48);
+      tl.fromTo("#v9", { scale: 1.0 }, { scale: 1.04, duration: 6, ease: "none" }, 54);
+      tl.to("#v9", { opacity: 0.0, duration: 0.8, ease: "power2.in" }, 59.2);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

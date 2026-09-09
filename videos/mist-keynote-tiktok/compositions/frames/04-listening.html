@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: transparent; color: #f4f1fa; font-family: Montserrat, system-ui, sans-serif; overflow: hidden; }
+        #root .anchor { position: absolute; left: 90px; top: 240px; display: flex; align-items: center; gap: 22px; }
+        #root .anchor b { font-weight: 900; font-size: 44px; letter-spacing: -0.02em; }
+        #root .anchor .st { position: relative; height: 34px; width: 420px; }
+        #root .anchor .st span { position: absolute; left: 0; top: 0; font: 700 26px/34px "JetBrains Mono", monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #ff6fd8; opacity: 0; }
+        #root .meter { position: absolute; left: 90px; right: 90px; bottom: 300px; display: grid; grid-template-columns: repeat(24, 1fr); gap: 10px; align-items: end; height: 120px; }
+        #root .meter i { display: block; width: 100%; height: 100%; background: #a855f7; transform-origin: bottom; border-radius: 3px; opacity: 0.85; }
+        #root .rule { position: absolute; left: 90px; right: 90px; bottom: 280px; height: 3px; background: #23202e; }
+        #root .rule b { display: block; height: 100%; width: 100%; background: #ff6fd8; transform-origin: left; }
+      </style>
+      <div data-hf-id="hf-5dvg" id="root" data-composition-id="listening" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-212y" class="anchor" id="anchor"><b data-hf-id="hf-g4lo">MIST</b>
+          <div data-hf-id="hf-pefx" class="st" data-layout-allow-overlap=""><span data-hf-id="hf-06sx" id="s1" data-layout-allow-overlap="">listening</span><span data-hf-id="hf-7aa6" id="s2" data-layout-allow-overlap="">hearing you</span><span data-hf-id="hf-x1jj" id="s3" data-layout-allow-overlap="">listening</span></div>
+        </div>
+      </div>
+      <script>
+        (() => {
+          const tl = gsap.timeline({ paused: true });
+          tl.from("#anchor", { autoAlpha: 0, y: -16, duration: 0.5, ease: "power3.out" }, 0.1);
+          tl.set("#s1", { opacity: 1 }, 0.4);
+          tl.set("#s1", { opacity: 0 }, 2.6); tl.set("#s2", { opacity: 1 }, 2.6);
+          tl.set("#s2", { opacity: 0 }, 4.4); tl.set("#s3", { opacity: 1 }, 4.4);
+          window.__timelines["listening"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

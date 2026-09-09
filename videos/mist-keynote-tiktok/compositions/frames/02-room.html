@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: transparent; color: #f4f1fa; font-family: Montserrat, system-ui, sans-serif; overflow: hidden; }
+        #root .vig { position: absolute; inset: 0; background: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(7,6,11,0) 55%, rgba(7,6,11,0.6) 100%); }
+        #root .third { position: absolute; left: 90px; bottom: 320px; display: flex; flex-direction: column; gap: 14px; }
+        #root .live { display: inline-flex; align-items: center; gap: 16px; font: 700 24px/1 "JetBrains Mono", monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #9a93a8; }
+        #root .live i { width: 12px; height: 12px; border-radius: 50%; background: #ff6fd8; display: block; }
+        #root .brand { display: flex; align-items: baseline; gap: 22px; margin: 0; }
+        #root .brand b { font-weight: 900; font-size: 128px; line-height: 1; letter-spacing: -0.03em; }
+        #root .brand span { font-weight: 500; font-size: 40px; color: #cfc8dc; }
+        #root .bar { height: 4px; width: 620px; background: #a855f7; transform-origin: left; }
+      </style>
+      <div data-hf-id="hf-zj30" id="root" data-composition-id="room" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-e4a6" class="vig"></div>
+        <div data-hf-id="hf-8j6r" class="third">
+          <div data-hf-id="hf-o7y2" class="live" id="live"><i data-hf-id="hf-wt6k"></i><span data-hf-id="hf-vr0h">live from the keynote</span></div>
+          <p data-hf-id="hf-ulm7" class="brand" id="brand"><b data-hf-id="hf-g4lo">MIST</b><span data-hf-id="hf-jwug">by Fluid</span></p>
+          <div data-hf-id="hf-nbs4" class="bar" id="bar"></div>
+        </div>
+      </div>
+      <script>
+        (() => {
+          const tl = gsap.timeline({ paused: true });
+          // one restrained move: the lower third slides up and holds
+          tl.from("#brand", { autoAlpha: 0, y: 56, duration: 0.7, ease: "expo.out" }, 0.5);
+          tl.from("#live", { autoAlpha: 0, y: 24, duration: 0.5, ease: "power3.out" }, 0.75);
+          tl.from("#bar", { scaleX: 0, duration: 0.8, ease: "expo.out" }, 0.9);
+          tl.to("#live i", { scale: 1.35, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: 7 }, 1.2);
+          window.__timelines["room"] = tl;
+        })();
+      </script>
+    </template>
+  </body>
+</html>

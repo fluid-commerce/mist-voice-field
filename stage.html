@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mist Stage</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; color: #fff; overflow: hidden;
+    font: 12px/1.4 -apple-system, "Inter", system-ui, sans-serif; }
+  #gl { position: fixed; inset: 0; display: block; }
+  /* the live visualizer runs at 1920x1080 in an iframe and doubles as the "monitor" in the corner */
+  #mon { position: fixed; right: 18px; bottom: 18px; width: 1920px; height: 1080px; border: 0; background: #000;
+    transform: scale(0.2); transform-origin: bottom right; border-radius: 40px; outline: 4px solid #23262c; pointer-events: none; }
+  body.mon-off #mon { opacity: 0; }
+  .hud { position: fixed; left: 18px; top: 16px; color: #8a8f99; letter-spacing: .04em; }
+  .hud b { color: #fff; font-style: italic; font-weight: 800; font-size: 14px; margin-right: 10px; }
+  .hint { position: fixed; left: 18px; bottom: 16px; color: #43474f; font-size: 10px; letter-spacing: .06em; }
+  #err { position: fixed; left: 18px; top: 44px; color: #f66; white-space: pre; }
+  /* state machine panel: click a node to drive the wall */
+  .sm { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; border-radius: 999px; background: rgba(10,9,16,0.78); border: 1px solid #23202e; backdrop-filter: blur(10px);
+    font: 500 11px/1 ui-monospace, "JetBrains Mono", Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; color: #8a8f99; z-index: 5; }
+  .sm button { appearance: none; border: 1px solid transparent; background: transparent; color: #9a93a8; font: inherit; letter-spacing: inherit; text-transform: inherit;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: background .25s, color .25s, border-color .25s; }
+  .sm button:hover { color: #fff; border-color: #2e2a3a; }
+  .sm button.on { background: #ff6fd8; color: #0a0810; font-weight: 700; }
+  .sm button.tog.on { background: transparent; color: #ff6fd8; border-color: #ff6fd8; font-weight: 500; }
+  .sm i { color: #4a4656; font-style: normal; }
+  .sm .sep { width: 1px; height: 18px; background: #2a2635; margin: 0 4px; }
+  .sm .lay { color: #6b6578; }
+  .sm .lay b { color: #cfc8dc; font-weight: 600; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<iframe id="mon"></iframe>
+<div class="hud"><b>MIST</b>stage · drag to orbit · scroll to zoom</div>
+<div id="err"></div>
+<div class="sm" id="sm">
+  <button data-st="idle">idle</button><i>→</i>
+  <button data-st="listening">listening</button><i>→</i>
+  <button data-st="thinking">thinking</button><i>→</i>
+  <button data-st="answering">answering</button><i>↺</i>
+  <span class="sep"></span>
+  <button class="tog" data-tog="quiet">quiet</button>
+  <button class="tog" data-tog="demo">▶ demo</button>
+  <span class="sep"></span>
+  <button class="lay" data-tog="layout">layout <b id="smLay">center</b></button>
+</div>
+<div class="hint">all visualizer keys work here (1–5, Q W E R states, U quiet, P demo, C G B L K Y O, S, M) · V camera views · T presenter clip (talk / idle) · N hide monitor · H hide UI</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RectAreaLightHelper } from "three/addons/helpers/RectAreaLightHelper.js";
+import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const err = m => { document.getElementById("err").textContent += m + "\n"; console.error(m); };
+window.addEventListener("error", e => err(e.message));
+
+const canvas = document.getElementById("gl");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+RectAreaLightUniformsLib.init();
+
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
+let camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 200);
+camera.position.set(-9, 2.2, 19); camera.lookAt(0, 5, 0);
+const controls = new OrbitControls(camera, canvas); controls.target.set(0, 5, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.52;
+
+// ---- post: soft bloom so the lit pixels glow into the room
+let composer, bloom;
+function buildComposer() {
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  bloom = null;   // bloom retired: it was hazing the floor
+  composer.addPass(new OutputPass());
+}
+
+// ---- the live screen: the visualizer canvas inside the iframe becomes a texture
+const mon = document.getElementById("mon");
+// ?src=orb puts the Orbloom lab (orb.html) on the wall instead of the pixel visualizer; cache-busted every load so edits show up
+const SRC = new URLSearchParams(location.search).get("src") === "orb" ? "orb.html" : "index.html";
+mon.src = SRC + "?embed=1&v=" + Date.now();
+let screenTex = null, srcCanvas = null, visWin = null, texW = 0, texH = 0;
+// the wash on the room takes its colour from what is actually on the screen: average the live canvas
+const spillCanvas = document.createElement("canvas"); spillCanvas.width = 128; spillCanvas.height = 72;
+const spillCtx = spillCanvas.getContext("2d");
+const spillTiny = document.createElement("canvas"); spillTiny.width = 12; spillTiny.height = 7;
+const spillTinyCtx = spillTiny.getContext("2d");
+let spillMask = null;
+function drawSpill(src) {
+  spillTinyCtx.drawImage(src, 0, 0, 12, 7);
+  spillCtx.globalCompositeOperation = "source-over"; spillCtx.filter = "none";
+  spillCtx.clearRect(0, 0, 128, 72);
+  spillCtx.filter = "blur(9px)"; spillCtx.drawImage(spillTiny, -8, -5, 144, 82); spillCtx.filter = "none";
+  if (!spillMask) { spillMask = spillCtx.createRadialGradient(64, 36, 10, 64, 36, 62); spillMask.addColorStop(0, "rgba(0,0,0,1)"); spillMask.addColorStop(0.7, "rgba(0,0,0,0.6)"); spillMask.addColorStop(1, "rgba(0,0,0,0)"); }
+  spillCtx.globalCompositeOperation = "destination-in"; spillCtx.fillStyle = spillMask; spillCtx.fillRect(0, 0, 128, 72);
+  spillCtx.globalCompositeOperation = "source-over";
+}
+let spillTex = null, spillMesh = null;
+const probe = document.createElement("canvas"); probe.width = 16; probe.height = 9;
+const probeCtx = probe.getContext("2d", { willReadFrequently: true });
+// the screen lights the room region by region: a 4x2 grid of area lights, each taking the colour and
+// brightness of its own patch of the live canvas, so a violet ring on the left throws violet on the left
+const RX = 4, RY = 2;
+const regionCol = Array.from({ length: RX * RY }, () => new THREE.Color(0, 0, 0));
+const regionLum = new Float32Array(RX * RY);
+let screenLum = 0.3, probeT = 0;
+function sampleScreen(now) {
+  if (!srcCanvas || now - probeT < 80) return; probeT = now;
+  try {
+    probeCtx.drawImage(srcCanvas, 0, 0, 16, 9);
+    const d = probeCtx.getImageData(0, 0, 16, 9).data;
+    let total = 0;
+    for (let ry = 0; ry < RY; ry++) for (let rx = 0; rx < RX; rx++) {
+      let r = 0, g = 0, b = 0, n = 0, lumSum = 0, cnt = 0;
+      const x0 = Math.floor(rx * 16 / RX), x1 = Math.floor((rx + 1) * 16 / RX), y0 = Math.floor(ry * 9 / RY), y1 = Math.floor((ry + 1) * 9 / RY);
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        const i = (y * 16 + x) * 4, w = (d[i] + d[i + 1] + d[i + 2]) / 765;
+        r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; n += w; lumSum += w; cnt++;
+      }
+      const k = ry * RX + rx, lum = lumSum / Math.max(1, cnt);
+      regionLum[k] += (lum - regionLum[k]) * 0.3; total += lum;
+      if (n > 1e-3) {
+        r /= n * 255; g /= n * 255; b /= n * 255;
+        const mx = Math.max(r, g, b) || 1, l = 0.299 * r + 0.587 * g + 0.114 * b, sat = 1.7;
+        regionCol[k].lerp(new THREE.Color(Math.max(0, (l + (r - l) * sat) / mx), Math.max(0, (l + (g - l) * sat) / mx), Math.max(0, (l + (b - l) * sat) / mx)), 0.3);
+      }
+    }
+    screenLum += (total / (RX * RY) - screenLum) * 0.3;
+  } catch {}
+}
+function hookVisualizer() {
+  try {
+    visWin = mon.contentWindow;
+    srcCanvas = mon.contentDocument && mon.contentDocument.getElementById("c");
+    // wait for the page to size its canvas: three allocates immutable texture storage at the first upload,
+    // so hooking a default 300x150 canvas that grows later leaves the wall black
+    if (!srcCanvas || srcCanvas.width < 600) { srcCanvas = null; return false; }
+    if (screenTex) screenTex.dispose();
+    screenTex = new THREE.CanvasTexture(srcCanvas); texW = srcCanvas.width; texH = srcCanvas.height;
+    screenTex.colorSpace = THREE.SRGBColorSpace; screenTex.flipY = false;
+    screenTex.minFilter = THREE.LinearMipmapLinearFilter; screenTex.generateMipmaps = true; screenTex.anisotropy = 8;
+    if (screenMesh) applyScreen();
+    if (mirror) { const m = mirror.userData.screen.material; m.map = screenTex; m.needsUpdate = true; }
+    return true;
+  } catch (e) { err("visualizer hook: " + e.message); return false; }
+}
+// the iframe may already be loaded (cache) before this module runs, so poll until the canvas is there
+const hookTimer = setInterval(() => { if (screenTex || hookVisualizer()) clearInterval(hookTimer); }, 250);
+mon.addEventListener("load", () => { if (!screenTex) setTimeout(hookVisualizer, 300); });
+
+// ---- scene from Blender
+let screenMesh = null, screenLight = null; const regionLights = [];
+const STAGE = { top: 0.9, presenter: new THREE.Vector3(3.5, 0.9, 3.0), lookAt: new THREE.Vector3(0, 5, 0) };
+function applyScreen() {
+  screenMesh.material = new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false });
+  screenMesh.material.map.needsUpdate = true;
+  if (mirror) { const m = mirror.userData.screen.material; m.map = screenTex; m.needsUpdate = true; }
+}
+new GLTFLoader().load("stage.glb?v=" + Date.now(), gltf => {
+  scene.add(gltf.scene);
+  gltf.scene.traverse(o => {
+    if (o.isMesh) {
+      o.receiveShadow = true; o.castShadow = !/Floor|Wall|Ceiling|Screen|Stage Riser/.test(o.name);
+      if (o.material && o.material.isMeshStandardMaterial) { o.material.envMapIntensity = 1.0; }
+    }
+    if (o.isLight) o.visible = false;          // Blender lights come across too hot; we light it here
+    if (/^Presenter/.test(o.name)) o.visible = false;   // capsule mannequin from Blender: replaced by the human below
+    if (/^Chair/.test(o.name)) o.visible = false;       // box chairs from Blender: replaced by the audience below
+    if (/^(Stage_Riser|Stage Riser|Floor)$/.test(o.name)) o.visible = false;   // the stage is rebuilt here as a translucent surface
+    if (o.isMesh && /Wall|Ceiling/.test(o.name) && o.material) { o.material = o.material.clone(); o.material.side = THREE.FrontSide; o.userData.wall = true; }   // single-sided: solid from inside, invisible from outside
+  });
+  // the exporter may wrap the mesh in a node of the same name; grab the actual mesh
+  const node = gltf.scene.getObjectByName("Screen");
+  node && node.traverse(o => { if (o.isMesh && !screenMesh) screenMesh = o; });
+  if (!screenMesh) err("no Screen mesh in stage.glb");
+  else { screenMesh.material = new THREE.MeshBasicMaterial({ color: 0x000000 }); if (screenTex) applyScreen(); }
+  // no other surface may glow on its own (Blender emissive strengths export very hot)
+  gltf.scene.traverse(o => { if (o.isMesh && o !== screenMesh && o.material && o.material.emissive) { o.material.emissive.set(0); o.material.emissiveIntensity = 0; } });
+  // the screen becomes an LED panel floating off the back wall, with a dark bezel
+  screenMesh.position.z += 0.12;
+  screenMesh.updateMatrixWorld(true);
+  const box0 = new THREE.Box3().setFromObject(screenMesh);
+  const sz0 = box0.getSize(new THREE.Vector3()), c0 = box0.getCenter(new THREE.Vector3());
+  const bz = 0, depth = 0.02;
+  // the LED surface fills the back wall: same dot grid as the visual, continuing past the live 16:9 area
+  ledWallSpec = { w: 32, h: 15, z: c0.z - 0.006, cellsAcross: null };
+  buildLedWall();
+
+
+  buildFakeReflection(sz0, c0, bz, depth);
+  // screen geometry → area light of the same size, sitting just in front of the panel
+  const box = new THREE.Box3().setFromObject(screenMesh);
+  const size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+  for (let ry = 0; ry < RY; ry++) for (let rx = 0; rx < RX; rx++) {
+    const l = new THREE.RectAreaLight(0xffffff, 0, size.x / RX, size.y / RY);
+    l.position.set(ctr.x - size.x / 2 + (rx + 0.5) * size.x / RX, ctr.y + size.y / 2 - (ry + 0.5) * size.y / RY, ctr.z + 0.05);
+    l.lookAt(l.position.x, l.position.y, l.position.z + 5);
+    scene.add(l); regionLights.push(l);
+  }
+  screenLight = regionLights[0];
+  { const rb0 = gltf.scene.getObjectByName("Stage_Riser") || gltf.scene.getObjectByName("Stage Riser"); if (rb0) { const bb = new THREE.Box3().setFromObject(rb0); STAGE.top = bb.max.y; STAGE.presenter.y = bb.max.y; } setupReflectGroup(); }
+  // lectern: beside the presenter, turned to face the house, reflected below
+  for (const nm of ["Lectern_Body", "Lectern_Top"]) {
+    const l = gltf.scene.getObjectByName(nm); if (!l) continue;
+    l.position.x = STAGE.presenter.x + 1.7; l.position.z = STAGE.presenter.z - 0.2; l.rotation.y += Math.PI;
+    gltf.scene.updateMatrixWorld(true);
+    l.traverse(o => { if (o.isMesh) reflectStatic(o); });
+  }
+  const riser = gltf.scene.getObjectByName("Stage_Riser") || gltf.scene.getObjectByName("Stage Riser");
+  if (riser) { const rb = new THREE.Box3().setFromObject(riser); STAGE.top = rb.max.y; STAGE.presenter.y = rb.max.y; }
+  STAGE.lookAt.set(ctr.x, ctr.y * 0.9, ctr.z); controls.target.copy(STAGE.lookAt);
+  spot.target.position.copy(STAGE.presenter).add(new THREE.Vector3(0, 1.1, 0));
+  // use Blender's audience camera as the first view
+  const bcam = gltf.cameras && gltf.cameras[0];
+  if (bcam) { views.push(bcam.getWorldPosition(new THREE.Vector3())); }
+  setView(0);
+}, undefined, e => err("stage.glb failed: " + (e.message || e)));
+
+// ---- the presenter: a rigged human with an idle loop. A local models/presenter.glb wins;
+// otherwise the three.js sample human (Mixamo "Soldier", shipped in the three.js repo) streams from jsdelivr.
+// drop a Mixamo download (FBX, "with skin") or any glb at models/presenter.fbx|glb and it wins
+const HUMAN_LOCALS = ["models/presenter.glb", "models/presenter.fbx"];
+const CDN = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r170/examples/models/gltf/";
+// ?human=rpm (casual Ready Player Me avatar, default) | soldier | michelle
+const HUMANS = { rpm: CDN + "readyplayer.me.glb", soldier: CDN + "Soldier.glb", michelle: CDN + "Michelle.glb",
+  cesium: "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/CesiumMan/glTF-Binary/CesiumMan.glb" };
+const humanParam = new URLSearchParams(location.search).get("human");
+const HUMAN_CDN = HUMANS[humanParam] || (humanParam && /^https?:\/\//.test(humanParam) ? humanParam : HUMANS.rpm);
+let mixer = null, humanRig = null, presenter = null;
+// the avatar faces +z at rest. The screen is at -z, the audience at +z, camera views sit house-left (-x).
+const YAW_SCREEN = Math.PI * 0.78;      // mostly toward the screen, shoulder open to the house
+const YAW_AUDIENCE = Math.PI * 0.12;    // toward the seats, a touch toward house-left
+let yawTarget = YAW_SCREEN, yawTimer = 0;
+// natural standing pose for Mixamo-named skeletons (RPM uses them): arms down, right arm presenting toward the screen
+const POSE = { LeftArm: [0.15, 0, 1.15], RightArm: [0.15, 0, -1.0], LeftForeArm: [0, 0, 0.2], RightForeArm: [0, 0, -0.9], Neck: [0, -0.35, 0], Head: [0.05, -0.15, 0] };
+// Ready Player Me avatars: drop the hat, swap the outfit textures for flat plain-clothes colors (tee, jeans, dark shoes)
+const PLAIN = { Wolf3D_Outfit_Top: 0x3a3d44, Wolf3D_Outfit_Bottom: 0x2a3550, Wolf3D_Outfit_Footwear: 0x1a1a1c };
+function plainClothes(h) {
+  h.traverse(o => {
+    if (!o.isMesh) return;
+    if (/Headwear|Glasses/.test(o.name)) o.visible = false;
+    const c = PLAIN[o.name];
+    if (c !== undefined) { o.material = new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0 }); }
+  });
+}
+function poseHuman(h) {
+  const bones = {}; h.traverse(o => { if (o.isBone) bones[o.name.replace(/^mixamorig:?/, "")] = o; });
+  humanRig = bones;
+  for (const [n, [x, y, z]] of Object.entries(POSE)) if (bones[n]) { bones[n].rotation.x += x; bones[n].rotation.y += y; bones[n].rotation.z += z; }
+  for (const n in bones) bones[n].userData.rest = bones[n].rotation.clone();
+}
+const clock = new THREE.Clock();
+async function loadHuman() {
+  let url = HUMAN_CDN;
+  for (const loc of HUMAN_LOCALS) { try { const r = await fetch(loc, { method: "HEAD" }); if (r.ok) { url = loc; break; } } catch {} }
+  const isFbx = /\.fbx$/i.test(url);
+  const loader = isFbx ? new FBXLoader() : new GLTFLoader();
+  if (!isFbx) { const draco = new DRACOLoader(); draco.setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/"); loader.setDRACOLoader(draco); }
+  loader.load(url, loaded => {
+    const gltf = isFbx ? { scene: loaded, animations: loaded.animations || [] } : loaded;
+    const h = gltf.scene;
+    h.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.material) o.material.envMapIntensity = 0.9; } });
+    plainClothes(h);
+    // normalise to ~1.8 m tall, feet on the stage riser, facing the screen three-quarter to the audience
+    const box = new THREE.Box3().setFromObject(h); const size = box.getSize(new THREE.Vector3());
+    const k = 1.8 / (size.y || 1); h.scale.setScalar(k);
+    h.updateMatrixWorld(true);
+    const box2 = new THREE.Box3().setFromObject(h);
+    h.position.set(STAGE.presenter.x, STAGE.presenter.y - box2.min.y, STAGE.presenter.z);
+    h.rotation.y = YAW_AUDIENCE;
+    presenter = h;
+    scene.add(h);
+    reflectSkinned(h);
+    // (seated human clones retired: the audience is coloured spheres now)
+    // a Mixamo download names its one clip "mixamo.com": treat it as the idle
+    const idle = gltf.animations.find(a => /idle|mixamo\.com/i.test(a.name)) || (isFbx && gltf.animations[0]);
+    if (idle) { mixer = new THREE.AnimationMixer(h); mixer.clipAction(idle).play(); }
+    else if (h.getObjectByName("Hips") && h.getObjectByName("Wolf3D_Body")) rpmAnimate(h);   // Ready Player Me rig: use RPM's own mocap library
+    else poseHuman(h);      // otherwise pose it and let the loop add a gentle breathing sway
+    const boneNames = []; h.traverse(o => { if (o.isBone) boneNames.push(o.name); });
+    window.__human = { root: h, boneNames, clips: gltf.animations.map(a => a.name), url };
+  }, undefined, e => err("human failed: " + (e.message || e)));
+}
+loadHuman();
+
+// Ready Player Me rigs use Mixamo bone names without the prefix; Xbot (three.js sample) has a clean idle
+// clip on a prefixed Mixamo rig. Retarget it so the presenter breathes and shifts weight for real.
+function borrowIdle(h) {
+  new GLTFLoader().load(CDN + "Xbot.glb", src => {
+    try {
+      const srcMesh = src.scene.getObjectByProperty("type", "SkinnedMesh") || src.scene.children.find(o => o.isSkinnedMesh);
+      const tgtMesh = h.getObjectByName("Wolf3D_Body") || h.getObjectByProperty("type", "SkinnedMesh");
+      const clip = src.animations.find(a => /idle/i.test(a.name)) || src.animations[0];
+      const names = {}; tgtMesh.skeleton.bones.forEach(b => { names[b.name] = "mixamorig" + b.name; });
+      const retargeted = SkeletonUtils.retargetClip(tgtMesh, srcMesh, clip, { names, hip: "Hips", useFirstFramePosition: true, preserveHipPosition: true });
+      mixer = new THREE.AnimationMixer(tgtMesh);
+      mixer.clipAction(retargeted).play();
+      humanRig = null;
+    } catch (e) { err("idle retarget failed, posing instead: " + e.message); poseHuman(h); }
+  }, undefined, () => poseHuman(h));
+}
+
+// Ready Player Me publishes a mocap animation library already retargeted to the RPM skeleton
+// (github.com/readyplayerme/animation-library). Same bone names as the avatar, so the clips play directly.
+const RPM_ANIM = "https://cdn.jsdelivr.net/gh/readyplayerme/animation-library@master/masculine/glb/";
+const RPM_CLIPS = { talk: RPM_ANIM + "expression/M_Talking_Variations_001.glb", idle: RPM_ANIM + "idle/M_Standing_Idle_001.glb", idle2: RPM_ANIM + "idle/M_Standing_Idle_Variations_002.glb" };
+let rpmActions = null, rpmCurrent = null;
+function rpmAnimate(h) {
+  mixer = new THREE.AnimationMixer(h); rpmActions = {};
+  const ld = new GLTFLoader();
+  let pending = Object.keys(RPM_CLIPS).length;
+  for (const [name, url] of Object.entries(RPM_CLIPS)) ld.load(url, g => {
+    if (g.animations[0]) { rpmActions[name] = mixer.clipAction(g.animations[0]); }
+    if (--pending === 0 || (name === "talk" && !rpmCurrent)) rpmPlay(rpmActions.talk ? "talk" : Object.keys(rpmActions)[0]);
+  }, undefined, () => { if (--pending === 0 && !rpmCurrent) poseHuman(h); });
+}
+function rpmPlay(name) {
+  const next = rpmActions && rpmActions[name]; if (!next || rpmCurrent === next) return;
+  next.reset().setEffectiveWeight(1).fadeIn(0.6).play();
+  if (rpmCurrent) rpmCurrent.fadeOut(0.6);
+  rpmCurrent = next; humanRig = null;
+}
+
+// ---- audience: rows of chairs with seated people. Instanced so 150 seats is a handful of draw calls.
+const SEATS = [];
+for (let row = 0; row < 8; row++) for (let i = 0; i < 18; i++) {
+  const aisle = (i >= 6 ? 1.6 : 0) + (i >= 12 ? 1.6 : 0);                       // two aisles between three blocks
+  const x = -11.8 + i * 1.2 + aisle + (row % 2 ? 0.3 : 0), z = 10.5 + row * 1.4;
+  SEATS.push({ x, z, occupied: Math.random() < 0.9, h: 0.92 + Math.random() * 0.16, yaw: (Math.random() - 0.5) * 0.5, seed: Math.random() * 6.283 });
+}
+const chairMat = new THREE.MeshStandardMaterial({ color: 0x0d0e11, roughness: 0.5, metalness: 0.15, envMapIntensity: 1.2 });
+const personMat = new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.8, metalness: 0, envMapIntensity: 0.9 });
+const skinMat = new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 0.9, metalness: 0 });
+const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V3 = new THREE.Vector3(), S3 = new THREE.Vector3(1, 1, 1);
+function inst(geo, mat, n) { const m = new THREE.InstancedMesh(geo, mat, n); m.castShadow = true; m.receiveShadow = true; scene.add(m); return m; }
+const seatI = inst(new THREE.BoxGeometry(0.5, 0.07, 0.5), chairMat, SEATS.length);
+const backI = inst(new THREE.BoxGeometry(0.5, 0.55, 0.06), chairMat, SEATS.length);
+const legI = inst(new THREE.BoxGeometry(0.04, 0.45, 0.04), chairMat, SEATS.length * 4);
+const bodyI = inst(new THREE.CapsuleGeometry(0.19, 0.3, 4, 10), personMat, SEATS.length); bodyI.visible = false;
+const neckI = inst(new THREE.CylinderGeometry(0.05, 0.06, 0.12, 10), skinMat, SEATS.length); neckI.visible = false;
+// the audience: one coloured sphere per seat, sitting where a head and shoulders would
+const orbMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.05, envMapIntensity: 0.9 });
+const headI = inst(new THREE.SphereGeometry(0.24, 20, 14), orbMat, SEATS.length);
+const ORB_COLORS = [0x7a5cff, 0xff6fd8, 0xa855f7, 0x6366f1, 0xf472b6, 0x5b8cff, 0x2dd4bf, 0xf59e0b, 0xfb7185, 0x84cc16, 0x38bdf8, 0xe879f9, 0xfacc15, 0xf97316, 0x22c55e, 0xe2e8f0, 0x94a3b8, 0xb45309];
+SEATS.forEach((s, n) => { const c = new THREE.Color(ORB_COLORS[Math.floor(Math.random() * ORB_COLORS.length)]); c.multiplyScalar(0.5 + 0.45 * Math.random()); headI.setColorAt(n, c);
+  s.f1 = 0.5 + Math.random() * 0.6; s.f2 = 0.25 + Math.random() * 0.35; s.f3 = 0.08 + Math.random() * 0.1; });
+headI.instanceColor.needsUpdate = true;
+let occupied = 0;
+SEATS.forEach((s, n) => {
+  const rot = Q.setFromEuler(new THREE.Euler(0, s.yaw * 0.2, 0));
+  seatI.setMatrixAt(n, M4.compose(V3.set(s.x, 0.45, s.z), rot, S3));
+  backI.setMatrixAt(n, M4.compose(V3.set(s.x, 0.75, s.z + 0.23), rot, S3));
+  for (let k = 0; k < 4; k++) legI.setMatrixAt(n * 4 + k, M4.compose(V3.set(s.x + (k % 2 ? 0.2 : -0.2), 0.22, s.z + (k < 2 ? 0.2 : -0.2)), rot, S3));
+  if (!s.occupied) { bodyI.setMatrixAt(n, M4.makeScale(0, 0, 0)); headI.setMatrixAt(n, M4.makeScale(0, 0, 0)); neckI.setMatrixAt(n, M4.makeScale(0, 0, 0)); return; }
+  occupied++;
+  bodyI.setMatrixAt(n, M4.compose(V3.set(s.x, 0.48 + 0.32 * s.h, s.z + 0.02), Q.setFromEuler(new THREE.Euler(0, s.yaw, 0)), new THREE.Vector3(1, s.h, 0.8)));
+  neckI.setMatrixAt(n, M4.compose(V3.set(s.x, 0.48 + 0.32 * s.h + 0.34 * s.h, s.z + 0.02), Q, S3));
+});
+function updateHeads(t) {
+  SEATS.forEach((s, n) => {
+    if (!s.occupied) return;
+    // breathing bob, slow head turns, and the occasional lean to a neighbour, each seat on its own clocks
+    const nod = Math.sin(t * s.f1 + s.seed) * 0.07, turn = s.yaw + Math.sin(t * s.f2 + s.seed * 1.7) * 0.25;
+    const lean = Math.sin(t * s.f3 + s.seed * 2.3); const leanX = Math.max(0, lean - 0.6) * 0.3 * (s.seed > 3.14 ? 1 : -1);
+    const bob = Math.sin(t * s.f1 * 1.3 + s.seed) * 0.015;
+    headI.setMatrixAt(n, M4.compose(V3.set(s.x + leanX, 0.48 + 0.42 * s.h + 0.24 + bob, s.z + 0.02 + nod * 0.3), Q.setFromEuler(new THREE.Euler(nod, turn, leanX * 0.6)), new THREE.Vector3(1, 0.9 + 0.2 * s.h, 1)));
+  });
+  headI.instanceMatrix.needsUpdate = true;
+}
+updateHeads(0);
+
+// ---- real reflections: a cube camera by the stage renders the room (wall included) into a mip-mapped
+// cube map that becomes scene.environment, so the presenter, chairs and floor reflect what is on screen.
+const cubeRT = new THREE.WebGLCubeRenderTarget(256, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const cubeCam = new THREE.CubeCamera(0.5, 120, cubeRT);
+cubeCam.position.set(0, 3.2, 5.5);
+scene.add(cubeCam);
+scene.environment = cubeRT.texture;
+let envFrame = 0;
+
+// ---- stage design: wood planks with a glossy planar reflection of the wall, a dark skirt, a light lip
+function woodTexture() {
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 1024; const g = c.getContext("2d");
+  const rows = 8, plankH = c.height / rows;
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * 0.5;
+    for (let k = -1; k < 3; k++) {
+      const x0 = (k + off) * (c.width / 2), w = c.width / 2;
+      const tone = 0.6 + 0.3 * Math.random();
+      g.fillStyle = `rgb(${Math.round(150 * tone + 50)},${Math.round(100 * tone + 30)},${Math.round(60 * tone + 18)})`;
+      g.fillRect(x0, r * plankH, w, plankH);
+      for (let n = 0; n < 26; n++) {                        // grain
+        g.strokeStyle = `rgba(0,0,0,${0.06 + 0.1 * Math.random()})`; g.lineWidth = 1 + Math.random() * 1.5;
+        const y = r * plankH + Math.random() * plankH; g.beginPath(); g.moveTo(x0, y);
+        for (let x = x0; x <= x0 + w; x += 64) g.lineTo(x, y + (Math.random() - 0.5) * 6); g.stroke();
+      }
+      g.fillStyle = "rgba(0,0,0,0.45)"; g.fillRect(x0, r * plankH, 3, plankH); g.fillRect(x0, r * plankH, w, 2);   // seams
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4, 1.4); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+const STAGE_W = 24, STAGE_D = 7.5;
+// the wood is glass-like: dark, mostly see-through, so the mirrored panel below reads as a reflection
+// glossy black glass: dark, slick, and see-through enough that the mirrored world below reads as reflection
+// the "gloss" is the mirrored world underneath; the surface itself is just a dark, barely-specular tint
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.5, metalness: 0.0, envMapIntensity: 0.35, transparent: true, opacity: 0.5, depthWrite: false });
+const wood = new THREE.Mesh(new THREE.PlaneGeometry(STAGE_W, STAGE_D), woodMat);
+wood.rotation.x = -Math.PI / 2; wood.position.set(0, STAGE.top + 0.004, STAGE_D / 2); wood.receiveShadow = true;
+scene.add(wood);
+// planar reflection layered over the wood at partial opacity: the wall mirrors in the glossy finish
+// PS2-style faked reflection: a mirrored copy of the LED panel stands upside-down BELOW the stage
+// surface, and the stage floor is translucent, so you see the reflection through the wood with real
+// perspective. Nothing is rendered twice; it is just more geometry, built from the panel's world box.
+// the wall behind the projection: one flat matte-black surface on the same plane as the live area,
+// so the 16:9 rectangle reads as light sitting on the wall, not a panel standing in front of it
+let ledWall = null, ledWallSpec = null, ledWallBuilt = false;
+function buildLedWall() {
+  if (!ledWallSpec || ledWallBuilt) return;
+  ledWall = new THREE.Mesh(new THREE.PlaneGeometry(ledWallSpec.w, ledWallSpec.h), new THREE.MeshStandardMaterial({ color: 0x040405, roughness: 0.95, metalness: 0.0, envMapIntensity: 0.15 }));
+  ledWall.position.set(0, ledWallSpec.h / 2, ledWallSpec.z); ledWall.receiveShadow = true; scene.add(ledWall);
+  reflectStatic(ledWall);
+  ledWallBuilt = true;
+}
+let mirror = null;
+const SQ = 1.0;                                   // no squash: the reflection is a true vertical mirror
+const reflectGroup = new THREE.Group();           // y → top - (y - top) * SQ, applied as a transform
+scene.add(reflectGroup);
+function setupReflectGroup() { reflectGroup.position.set(0, STAGE.top * (1 + SQ), 0); reflectGroup.scale.set(1, -SQ, 1); }
+// mirror any static mesh: clone into the reflect group in world coordinates
+function reflectStatic(mesh, mat) {
+  mesh.updateMatrixWorld(true);
+  const c = new THREE.Mesh(mesh.geometry, mat || mesh.material);
+  c.matrixAutoUpdate = false; c.matrix.copy(mesh.matrixWorld); c.castShadow = c.receiveShadow = false;
+  reflectGroup.add(c); return c;
+}
+// mirror a skinned, animated character: an independent clone lives in the reflect group and its bones
+// copy the live pose every frame, so the reflection moves with the original
+const reflectedRigs = [];
+function reflectSkinned(root) {
+  const c = SkeletonUtils.clone(root);
+  c.position.copy(root.position); c.rotation.copy(root.rotation); c.scale.copy(root.scale);
+  const dst = {}; c.traverse(o => { if (o.isBone) dst[o.name] = o; if (o.isMesh) { o.material = o.material.clone(); o.material.side = THREE.DoubleSide; o.castShadow = o.receiveShadow = false; o.frustumCulled = false; } });
+  const pairs = []; root.traverse(o => { if (o.isBone && dst[o.name]) pairs.push([o, dst[o.name]]); });
+  reflectGroup.add(c); reflectedRigs.push({ root, c, pairs });
+}
+function updateReflectedRigs() {
+  for (const r of reflectedRigs) {
+    r.c.position.copy(r.root.position); r.c.rotation.copy(r.root.rotation); r.c.scale.copy(r.root.scale);
+    for (const [a, b] of r.pairs) { b.position.copy(a.position); b.quaternion.copy(a.quaternion); b.scale.copy(a.scale); }
+  }
+}
+function buildFakeReflection(size, ctr, bz, depth) {
+  setupReflectGroup();
+  const top = STAGE.top, my = y => 2 * top - y;
+  mirror = new THREE.Group();
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y),
+    new THREE.MeshBasicMaterial({ map: screenTex, color: 0xa0a0ac, toneMapped: false, side: THREE.DoubleSide }));
+  const myq = y => top - (y - top) * SQ;
+  scr.position.set(ctr.x, myq(ctr.y), ctr.z); scr.scale.y = SQ;                // texture is flipY=false: already upside down here
+  mirror.add(scr); mirror.userData.screen = scr;
+  const bm = new THREE.MeshStandardMaterial({ color: 0x0a0b0e, roughness: 0.6, metalness: 0.3 });
+  for (const [w, h, x, y] of (bz > 0 ? [[size.x + 2 * bz, bz, 0, size.y / 2 + bz / 2], [bz, size.y, -size.x / 2 - bz / 2, 0], [bz, size.y, size.x / 2 + bz / 2, 0]] : [])) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, depth), bm); m.position.set(ctr.x + x, myq(ctr.y + y), ctr.z - depth / 2 + 0.01); mirror.add(m);
+  }
+  scene.add(mirror);
+}
+// stage skirt + a thin light lip along the front edge
+const skirtMat = new THREE.MeshStandardMaterial({ color: 0x08090c, roughness: 0.95 });
+const skirt = new THREE.Mesh(new THREE.BoxGeometry(STAGE_W, STAGE.top, 0.06), skirtMat);
+skirt.position.set(0, STAGE.top / 2, STAGE_D + 0.03); scene.add(skirt);
+for (const sx of [-1, 1]) { const side = new THREE.Mesh(new THREE.BoxGeometry(0.06, STAGE.top, STAGE_D), skirtMat); side.position.set(sx * STAGE_W / 2, STAGE.top / 2, STAGE_D / 2); scene.add(side); }
+// a dark pit floor far below so the see-through stage reads as depth, not as a hole to nothing
+const pit = new THREE.Mesh(new THREE.PlaneGeometry(34, 36), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+pit.rotation.x = -Math.PI / 2; pit.position.set(0, -20, 16); scene.add(pit);
+const lip = new THREE.Mesh(new THREE.BoxGeometry(STAGE_W - 0.4, 0.015, 0.02), new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x9a6bff, emissiveIntensity: 1.6 }));
+lip.position.set(0, STAGE.top - 0.03, STAGE_D + 0.07); scene.add(lip);
+// audience floor: dark carpet with a slight sheen so the wall glow lands on it
+const carpet = new THREE.Mesh(new THREE.PlaneGeometry(32, 26), new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.92, metalness: 0.0, envMapIntensity: 0.15 }));
+carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.003, STAGE_D + 13); carpet.receiveShadow = true; scene.add(carpet);
+
+// a soft warm wash from above the stage so the wood and the presenter's face read; the wall stays the key
+const wash = new THREE.RectAreaLight(0xffe4c8, 0.08, 20, 5);
+wash.position.set(0, 9.5, STAGE_D / 2 + 0.5); wash.lookAt(0, 0, STAGE_D / 2 + 0.5);
+scene.add(wash);
+
+// ---- seated rigged people: the same avatar body cloned into the first rows, posed sitting, dimmed and varied.
+// Bone names are Mixamo's (Ready Player Me rigs), so the sit pose is a few fixed rotations.
+const SIT = { LeftUpLeg: [-1.5, 0, 0.12], RightUpLeg: [-1.5, 0, -0.12], LeftLeg: [1.45, 0, 0], RightLeg: [1.45, 0, 0], LeftArm: [0.5, 0, 1.25], RightArm: [0.5, 0, -1.25], LeftForeArm: [0.2, 0, 0.35], RightForeArm: [0.2, 0, -0.35], Spine: [0.1, 0, 0], Head: [0.05, 0, 0] };
+const seatedRigs = [];
+function seatAudience(src) {
+  const ROWS_WITH_PEOPLE = 3;
+  const hipsSrc = src.getObjectByName("Hips");
+  const hipY = hipsSrc.getWorldPosition(new THREE.Vector3()).y - src.position.y;   // hips height in the standing pose
+  SEATS.forEach((s, n) => {
+    const row = Math.floor(n / 18);
+    if (row >= ROWS_WITH_PEOPLE || !s.occupied) return;
+    const c = SkeletonUtils.clone(src);
+    c.traverse(o => {
+      if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; o.frustumCulled = false;
+        const m = o.material.clone(); m.color.multiplyScalar(0.55 + 0.25 * Math.random()); m.envMapIntensity = 0.6; o.material = m; }
+      if (o.isBone && SIT[o.name]) { const r = SIT[o.name]; o.rotation.x += r[0]; o.rotation.y += r[1]; o.rotation.z += r[2]; }
+      if (o.isBone && (o.name === "Head" || o.name === "Neck")) o.rotation.y += s.yaw;
+    });
+    c.scale.setScalar(s.h);
+    c.position.set(s.x, 0.48 - hipY * s.h + 0.02, s.z + 0.08);      // hips onto the seat
+    c.rotation.y = Math.PI + s.yaw * 0.3;                            // facing the stage
+    scene.add(c); seatedRigs.push({ rig: c, seat: s });
+    // hide that seat's silhouette
+    bodyI.setMatrixAt(n, M4.makeScale(0, 0, 0)); headI.setMatrixAt(n, M4.makeScale(0, 0, 0)); neckI.setMatrixAt(n, M4.makeScale(0, 0, 0));
+    s.occupied = false;                                              // so updateHeads skips it too
+  });
+  bodyI.instanceMatrix.needsUpdate = true; neckI.instanceMatrix.needsUpdate = true; headI.instanceMatrix.needsUpdate = true;
+}
+
+// stage spot + a hair of ambient
+const spot = new THREE.SpotLight(0xffdcb3, 320, 60, THREE.MathUtils.degToRad(9), 0.6, 1.4);
+spot.position.set(-6, 9, 20); spot.target.position.set(3.5, 2.0, 3.0); spot.castShadow = true;
+spot.shadow.mapSize.set(1024, 1024); spot.shadow.bias = -0.0005;
+scene.add(spot, spot.target);
+scene.add(new THREE.AmbientLight(0x223044, 0.12));
+
+// ---- camera views (V)
+// [position, target]; a null target looks at the screen
+const views = [
+  [new THREE.Vector3(-12, 3, 26), null],                                   // audience, house left
+  [new THREE.Vector3(0, 3.2, 30), null],                                   // audience, center
+  [new THREE.Vector3(6.5, 2.4, 8.0), new THREE.Vector3(3.5, 1.9, 3.0)],    // close on the presenter
+  [new THREE.Vector3(14, 4, 12), null],                                    // house right, wide
+  [new THREE.Vector3(-2, 1.7, 9.5), new THREE.Vector3(0.5, 3, 0)],         // low at the stage lip: the floor reflection
+];
+let viewIx = 0;
+function setView(i) {
+  viewIx = i % views.length; const [pos, tgt] = views[viewIx];
+  camera.position.copy(pos); controls.target.copy(tgt || STAGE.lookAt); controls.update();
+}
+
+// ---- keys: V / N / H here, everything else forwarded into the visualizer
+window.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "v") setView(viewIx + 1);
+  else if (k === "t") { const names = Object.keys(rpmActions || {}); if (names.length) rpmPlay(names[(names.indexOf(Object.keys(rpmActions).find(n => rpmActions[n] === rpmCurrent)) + 1) % names.length]); }
+  else if (k === "n") document.body.classList.toggle("mon-off");
+  else if (k === "h") document.querySelectorAll(".hud,.hint,.sm").forEach(el => el.hidden = !el.hidden);
+  else if (visWin) visWin.dispatchEvent(new KeyboardEvent("keydown", { key: e.key }));
+});
+
+
+// ---- state machine panel (top center). Each node is [visualizer state, layout].
+const SM = { idle: ["idle", "center"], listening: ["listening", "center"], thinking: ["thinking", "answer"], answering: ["speaking", "answer"] };
+const mist = () => (visWin && visWin.__mist) || null;
+function smGo(name) { const m = mist(); if (!m) return; const [st, lay] = SM[name]; m.stopDemo(); if (m.LAYOUT !== lay) m.setLayout(lay); m.setState(st); }
+document.querySelectorAll("#sm [data-st]").forEach(b => b.onclick = () => smGo(b.dataset.st));
+document.querySelector("#sm [data-tog=quiet]").onclick = () => { const m = mist(); if (m) m.setQuiet(!m.QUIET); };
+document.querySelector("#sm [data-tog=demo]").onclick = () => { const m = mist(); if (m) m.DEMO ? m.stopDemo() : m.playDemo(); };
+document.querySelector("#sm [data-tog=layout]").onclick = () => { const m = mist(); if (m) m.setLayout(); };
+setInterval(() => {
+  const m = mist(); if (!m) return;
+  const cur = m.state === "speaking" ? "answering" : m.state;
+  document.querySelectorAll("#sm [data-st]").forEach(b => b.classList.toggle("on", b.dataset.st === cur));
+  document.querySelector("#sm [data-tog=quiet]").classList.toggle("on", m.QUIET);
+  document.querySelector("#sm [data-tog=demo]").classList.toggle("on", m.DEMO);
+  document.getElementById("smLay").textContent = m.LAYOUT;
+}, 120);
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, true);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  buildComposer(); composer.setSize(innerWidth, innerHeight);
+}
+window.addEventListener("resize", resize); resize();
+
+window.__stage = { scene, controls, setView, get camera() { return camera; }, get screenMesh() { return screenMesh; } };
+renderer.setAnimationLoop(() => {
+  controls.update();
+  const dtc = clock.getDelta();
+  if (mixer) mixer.update(dtc);
+  updateHeads(performance.now() / 1000);
+  updateReflectedRigs();
+  if (presenter) {            // talk to the screen for ~7 s, glance back at the audience for ~3.5 s, repeat
+    yawTimer += dtc;
+    yawTarget = YAW_AUDIENCE;                    // facing the house for now
+    const d = yawTarget - presenter.rotation.y;
+    presenter.rotation.y += d * Math.min(1, dtc * 2.2);
+  }
+  if (humanRig) {           // breathing + weight shift so a static rig doesn't read as a statue
+    const t = performance.now() / 1000;
+    const sw = (n, ax, amt, f, ph = 0) => { const b = humanRig[n]; if (b) b.rotation[ax] = b.userData.rest[ax] + Math.sin(t * f + ph) * amt; };
+    sw("Spine", "z", 0.02, 0.6); sw("Spine1", "x", 0.015, 1.7); sw("Head", "y", 0.06, 0.45, 1); sw("Head", "x", 0.02, 1.1);
+    sw("RightArm", "x", 0.04, 0.7, 2); sw("LeftArm", "z", 0.02, 0.5, 0.5);
+  }
+  if (screenTex && srcCanvas && (srcCanvas.width !== texW || srcCanvas.height !== texH)) hookVisualizer();   // the source resized: re-allocate
+  if (screenTex) screenTex.needsUpdate = true;
+
+  // the wash on the room follows the visualizer's voice level so the light breathes with the sound
+  sampleScreen(performance.now()); buildLedWall();
+  if ((envFrame++ & 1) === 0 && screenTex) { cubeCam.update(renderer, scene); }
+  for (let k = 0; k < regionLights.length; k++) {
+    const l = regionLights[k];
+    l.color.copy(regionCol[k]);
+    l.intensity += ((regionLum[k] * 7 + 0.02) - l.intensity) * 0.2;    // a fully lit patch ≈ 7 nits, black patch ≈ nothing
+  }
+  composer.render();
+});
+</script>
+</body>
+</html>

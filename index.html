@@ -1,0 +1,1301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mist Voice Field</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; color: #fff; overflow: hidden;
+    font: 13px/1.4 -apple-system, "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  canvas { position: fixed; inset: 0; display: block; }
+  .ui > * { position: fixed; }
+  .brand { top: 22px; left: 26px; display: flex; gap: 14px; align-items: center;
+    font-size: 10px; letter-spacing: .22em; color: #6d727c; text-transform: uppercase; }
+  .brand b { color: #fff; font-size: 15px; font-style: italic; font-weight: 800; letter-spacing: .02em; }
+  .brand i { width: 1px; height: 12px; background: #2a2d33; }
+  .chips { display: flex; gap: 6px; }
+  .chips.variants { top: 18px; right: 22px; }
+  .chips.states { top: 18px; left: 50%; transform: translateX(-50%); }
+  .chips.shape { right: 26px; bottom: 116px; }
+  @media (max-width: 1180px) { .chips.states { top: 56px; left: 22px; transform: none; } .chips.shape { bottom: 160px; flex-wrap: wrap; justify-content: flex-end; max-width: 60vw; } }
+  .chips.shape .chip { color: #cfd3da; }
+  .answer { left: 50%; transform: translateX(-50%); bottom: 120px; width: min(640px, 88vw); border: 1px solid #23262c;
+    border-radius: 14px; background: rgba(8,8,10,.7); padding: 16px 20px; box-sizing: border-box; display: none; }
+  .answer .k { font-size: 10px; letter-spacing: .22em; color: #8a7cf0; text-transform: uppercase; margin-bottom: 8px; }
+  .answer b { display: block; font-size: 15px; margin-bottom: 6px; }
+  .answer p { margin: 0; color: #b6bac2; font-size: 15px; }
+  body.high .answer { display: block; }
+  body.high .title { display: none; }
+  body.left .title, body.lay-answer .title { display: none; }
+  .chip { border: 1px solid #23262c; background: rgba(0,0,0,.6); color: #8a8f99; border-radius: 999px;
+    padding: 6px 11px; font-size: 11px; cursor: pointer; letter-spacing: .04em; user-select: none; }
+  .chip:hover { color: #cfd3da; }
+  .chip.on { border-color: #fff; color: #fff; }
+  .chip kbd { opacity: .45; margin-right: 7px; font: inherit; }
+  .title { left: 26px; bottom: 116px; max-width: 380px; }
+  .title .k { font-size: 10px; letter-spacing: .22em; color: #6d727c; margin-bottom: 6px; }
+  .title h2 { margin: 0 0 6px; font-size: 22px; font-weight: 500; letter-spacing: -.01em; }
+  .title p { margin: 0; color: #8a8f99; }
+  .bar { left: 50%; bottom: 44px; transform: translateX(-50%); width: min(640px, 88vw); height: 50px;
+    border: 1px solid #23262c; border-radius: 14px; background: rgba(8,8,10,.78); backdrop-filter: blur(10px);
+    display: flex; align-items: center; gap: 10px; padding: 0 9px 0 16px; box-sizing: border-box; }
+  .bar .dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; flex: none;
+    box-shadow: 0 0 0 0 rgba(255,255,255,.5); }
+  .bar .ph { flex: 1; color: #5d626b; }
+  .bar button { width: 32px; height: 32px; border-radius: 9px; border: 1px solid #23262c; background: transparent;
+    color: #cfd3da; cursor: pointer; display: grid; place-items: center; flex: none; padding: 0; }
+  .bar button.on { background: #fff; color: #000; border-color: #fff; }
+  .bar button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .hint { left: 50%; transform: translateX(-50%); bottom: 22px; font-size: 10px; color: #43474f;
+    letter-spacing: .06em; white-space: nowrap; }
+  .meter { right: 26px; bottom: 44px; width: 3px; height: 50px; border-radius: 2px; background: #15171b; overflow: hidden; }
+  .meter i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: #fff; }
+  body.clean .ui { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <div class="brand"><b>MIST</b><i></i><span>Presentation</span></div>
+  <div class="chips states" id="states"></div>
+  <div class="chips variants" id="variants"></div>
+  <div class="title"><div class="k" id="tK">01 / 05</div><h2 id="tH"></h2><p id="tP"></p></div>
+  <div class="bar">
+    <span class="dot" id="dot"></span>
+    <span class="ph" id="ph">Ask MIST anything…</span>
+    <button id="simBtn" title="Simulated voice (S)">
+      <svg viewBox="0 0 24 24"><path d="M4 12h2l2-5 3 10 3-8 2 3h4"/></svg>
+    </button>
+    <button id="micBtn" title="Live microphone (M)">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+  </div>
+  <div class="meter"><i id="meter"></i></div>
+  <div class="chips shape" id="grid">
+    <span class="chip" id="gShape"></span><span class="chip" id="gDens"></span><span class="chip" id="gBoard"></span><span class="chip" id="gLayout"></span><span class="chip" id="gLook"></span><span class="chip" id="gVibe"></span><span class="chip" id="gColor"></span>
+  </div>
+  <div class="answer" id="answer">
+    <div class="k">Summary</div><b>MIST</b>
+    <p>Pulling the actual change log from the reporting database now.</p>
+  </div>
+  <div class="hint">1–5 variants · Q W E R states · U quiet · P demo · C shape · G density · B board · L layout · K look · Y halo vibe · O color · S simulate · M mic · H hide UI · F fullscreen · move the mouse over the M</div>
+</div>
+
+<script type="module">
+// ============================================================================
+// Shared grammar: everything is a white square on a black grid. No gradients,
+// no anti-aliased motion. Cells move by whole grid steps, exactly like the
+// mist-logo web component this is built from.
+// ============================================================================
+const CW = 1024, CH = 576;                 // authoring canvas of the baked M
+const fract = x => x - Math.floor(x);
+const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const hash = (a, b) => fract(Math.sin(a * 127.1 + b * 311.7) * 43758.5453);
+function vnoise2(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+}
+const vnoise1 = x => vnoise2(x, 0.37);
+
+// Briton's hand-tuned letterform (mist.html, 2026-07-20), 90 cols.
+const DEFAULT_SHAPE = "90:0,1653,1,3,0,4,1,3,0,4,1,4,0,71,1,5,0,2,1,5,0,2,1,5,0,70,1,6,0,1,1,6,0,1,1,6,0,69,1,21,0,68,1,22,0,67,1,23,0,66,1,24,0,65,1,25,0,64,1,25,0,64,1,25,0,65,1,24,0,66,1,23,0,67,1,22,0,68,1,7,0,1,1,13,0,69,1,6,0,2,1,6,0,1,1,5,0,70,1,5,0,3,1,5,0,2,1,4,0,72,1,3,0,5,1,3,0,4,1,2,0,1578";
+function decodeShape(str) {
+  const [sc, csv] = str.split(":");
+  const cols = parseInt(sc, 10);
+  const nums = csv.split(",").map(Number);
+  let total = 0;
+  for (let p = 1; p < nums.length; p += 2) total += nums[p];
+  const rows = Math.round(total / cols);
+  const grid = new Uint8Array(cols * rows);
+  let k = 0;
+  for (let p = 0; p + 1 < nums.length && k < grid.length; p += 2)
+    for (let n = 0; n < nums[p + 1] && k < grid.length; n++) grid[k++] = nums[p];
+  return { cols, rows, grid };
+}
+const BAKED = decodeShape(DEFAULT_SHAPE);
+// The lit cells, at a grid density D (1 = the baked 27x17 footprint, 2 = every
+// cell split 2x2, ...). The M keeps its physical size; the grid gets finer.
+let D = 1, DG = 1, MC = [], MW = 0, MH = 0, SX, SY, SVX, SVY, MP, MPROX, MA;
+// the original logo's stroke path (shape-square coordinates) and each cell's position along it (0 → 1).
+// The thinking wipe writes the letterform along this arc, exactly like the logo's draw-in.
+const STROKE = [[0.239, 0.605], [0.425, 0.422], [0.416, 0.602], [0.597, 0.42], [0.592, 0.605], [0.78, 0.42]];
+const STROKE_CUM = (() => { const seg = []; let total = 0; for (let i = 0; i < STROKE.length - 1; i++) { const d = Math.hypot(STROKE[i + 1][0] - STROKE[i][0], STROKE[i + 1][1] - STROKE[i][1]); seg.push(d); total += d; } const cum = [0]; let acc = 0; for (const d of seg) { acc += d; cum.push(acc / total); } return cum; })();
+function projArcLen(u, v) {
+  let best = 1e9, bestT = 0;
+  for (let s = 0; s < STROKE.length - 1; s++) {
+    const a = STROKE[s], b = STROKE[s + 1], abx = b[0] - a[0], aby = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((u - a[0]) * abx + (v - a[1]) * aby) / (abx * abx + aby * aby || 1e-6)));
+    const d = Math.hypot(u - (a[0] + abx * t), v - (a[1] + aby * t));
+    if (d < best) { best = d; bestT = STROKE_CUM[s] + (STROKE_CUM[s + 1] - STROKE_CUM[s]) * t; }
+  }
+  return bestT;
+}
+function buildM(d) {
+  D = d; MC = [];
+  let bx0 = 1e9, bx1 = -1, by0 = 1e9, by1 = -1;
+  for (let j = 0; j < BAKED.rows; j++) for (let i = 0; i < BAKED.cols; i++) if (BAKED.grid[j * BAKED.cols + i]) {
+    bx0 = Math.min(bx0, i); bx1 = Math.max(bx1, i); by0 = Math.min(by0, j); by1 = Math.max(by1, j);
+    for (let b = 0; b < d; b++) for (let a = 0; a < d; a++) MC.push({ i: i * d + a, j: j * d + b, hv: hash(i * d + a, j * d + b) });
+  }
+  MW = (bx1 - bx0 + 1) * d; MH = (by1 - by0 + 1) * d;
+  // the component's dissolve axis follows the M's strokes: map each cell back to the 90-col authoring
+  // canvas (cell 11 px, offsets 17/2, shape square 0.8·CH at x = 0.42·CW) and slant the coordinate by 0.8
+  const cs0 = Math.floor(CW / BAKED.cols), offX = Math.floor((CW - cs0 * BAKED.cols) / 2), offY = Math.floor((CH - cs0 * BAKED.rows) / 2);
+  const Rs = 0.8 * CH, Rx = 0.42 * CW - Rs / 2, Ry = (CH - Rs) / 2;
+  for (const c of MC) {
+    const io = c.i / d, jo = c.j / d;                          // original grid indices (fractional at finer densities)
+    const u = (offX + (io + 0.5) * cs0 - Rx) / Rs, v = (offY + (jo + 0.5) * cs0 - Ry) / Rs;
+    c.tx = clamp(((u - 0.239) + (v - 0.5) * 0.8) / 0.542, 0, 1.2);
+    c.rightness = smoothstep(0.62, 1.02, c.tx);                 // original 90-col preset: solid 0.62
+    c.rev = projArcLen(u, v);                                   // arc-length position for the draw-in wipe
+    c.i -= bx0 * d; c.j -= by0 * d;
+  }
+  // per-cell spring state for the pointer bulge (cells have weight)
+  SX = new Float32Array(MC.length); SY = new Float32Array(MC.length); SVX = new Float32Array(MC.length); SVY = new Float32Array(MC.length);
+  MP = new Int16Array(MC.length * 2); MPROX = new Float32Array(MC.length); MA = new Float32Array(MC.length).fill(1);
+}
+buildM(1);
+
+// ============================================================================
+// Voice: one signal set every variant reads. level 0..1 (fast attack, slow
+// release), bands[8] (log-spaced, speech range), onset (transient hits).
+// Sources: simulated speech (default so the deck plays with no permissions),
+// live mic, or off.
+// ============================================================================
+const voice = {
+  mode: "sim", gain: 1, level: 0, fast: 0, raw: 0, slow: 0, onset: 0, bands: new Float32Array(8),
+  ac: null, an: null, td: null, fd: null, stream: null,
+  async mic() {
+    if (this.mode === "mic") { this.stop(); return; }
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      this.ac = new AudioContext();
+      const src = this.ac.createMediaStreamSource(this.stream);
+      this.an = this.ac.createAnalyser(); this.an.fftSize = 1024; this.an.smoothingTimeConstant = 0.55;
+      src.connect(this.an);
+      this.td = new Float32Array(this.an.fftSize); this.fd = new Uint8Array(this.an.frequencyBinCount);
+      this.mode = "mic";
+    } catch (e) { console.warn("mic unavailable", e); this.mode = "sim"; }
+    syncButtons();
+  },
+  stop() {
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    if (this.ac) this.ac.close();
+    this.stream = this.ac = this.an = null; this.mode = "off"; syncButtons();
+  },
+  sim() { if (this.mode === "mic") this.stop(); this.mode = this.mode === "sim" ? "off" : "sim"; syncButtons(); },
+  update(t, dt) {
+    let raw = 0; const b = this.bands;
+    if (this.mode === "mic" && this.an) {
+      this.an.getFloatTimeDomainData(this.td);
+      let s = 0; for (let n = 0; n < this.td.length; n++) s += this.td[n] * this.td[n];
+      raw = clamp(Math.sqrt(s / this.td.length) * 7, 0, 1) * this.gain;
+      this.an.getByteFrequencyData(this.fd);
+      // 8 log-spaced bands from ~90Hz to ~5kHz (bin ≈ 43Hz at 44.1k)
+      for (let k = 0; k < 8; k++) {
+        const lo = Math.round(2 * Math.pow(58, k / 8)), hi = Math.max(lo + 1, Math.round(2 * Math.pow(58, (k + 1) / 8)));
+        let a = 0; for (let n = lo; n < hi; n++) a += this.fd[n];
+        a = clamp((a / (hi - lo)) / 255 * 1.6, 0, 1);
+        b[k] += (a - b[k]) * (a > b[k] ? 0.22 : 0.07);
+      }
+    } else if (this.mode === "sim") {
+      // syllables at ~3.2/s inside phrases with pauses between them
+      const sp = t * 3.2 + Math.sin(t * 1.7) * 0.24;                 // syllable phase, ~3.2/s with drift
+      const syl = Math.max(0, Math.sin(sp * 6.283));                  // vowel body
+      const cons = Math.pow(Math.max(0, Math.cos(sp * 6.283)), 14);   // consonant spike at each syllable onset
+      const ph = 0.5 + 0.35 * Math.sin(t * 0.7) + 0.25 * Math.sin(t * 1.9 + 2) + 0.15 * (vnoise1(t * 0.5 + 17.3) - 0.5);
+      const phrase = smoothstep(0.25, 0.5, ph);
+      raw = clamp(Math.pow(syl, 1.4) * phrase * (0.7 + 0.6 * vnoise1(t * 5 + 9)) * 1.25, 0, 1) * this.gain;
+      for (let k = 0; k < 8; k++) {
+        const lowW = 1 - k / 7, highW = k / 7;
+        const formant = 0.5 + 0.5 * Math.sin(t * (0.9 + k * 0.37) + k * 2.1);     // mids wander on their own clock
+        const tgt = phrase * clamp(lowW * Math.pow(syl, 1.4) * (0.5 + 0.7 * formant) + highW * cons * 1.3 * (0.4 + 0.6 * vnoise1(t * 7 + k * 5)), 0, 1);
+        b[k] += (tgt - b[k]) * (tgt > b[k] ? 0.25 : 0.07);
+      }
+    } else for (let k = 0; k < 8; k++) b[k] *= 0.9;
+    const a = raw > this.level ? 1 - Math.exp(-dt * 40) : 1 - Math.exp(-dt * 6.5);
+    this.level += (raw - this.level) * a;
+    this.fast += (raw - this.fast) * (raw > this.fast ? 1 - Math.exp(-dt * 40) : 1 - Math.exp(-dt * 9));
+    this.slow += (raw - this.slow) * (1 - Math.exp(-dt * 3));
+    const on = Math.max(0, raw - this.slow - 0.06) * 2.6;
+    this.onset = Math.max(this.onset * Math.exp(-dt * 9), Math.min(1, on));
+    this.raw = raw;
+  }
+};
+
+// ============================================================================
+// Stage: grid layout, cell drawing, pointer bulge, particle pool
+// ============================================================================
+const canvas = document.getElementById("c"), mainCtx = canvas.getContext("2d");
+let ctx = mainCtx;                                   // variants draw here; a look may point it at an offscreen layer
+const LOOKS = ["clean", "chroma", "glow", "crt", "lens"];
+let LOOK = "glow";
+const scn = document.createElement("canvas"), scnCtx = scn.getContext("2d");
+const tmp = document.createElement("canvas"), tmpCtx = tmp.getContext("2d");
+let W = 0, H = 0, DPR = 1, cs = 6, cols = 0, rows = 0, mi0 = 0, mj0 = 0, cx = 0, cy = 0, T = 0;
+const STATES = ["idle", "listening", "thinking", "speaking"];
+let state = "listening";
+let variantIx = 0;
+let mScale = 1;          // per-variant M size multiplier
+let SHAPE = "round";     // C cycles: round | square | mixed (M square, mist round)
+let BOARD = true;        // B: faint dot for every empty cell, so the screen reads as a pixel board
+let LAYOUT = "center";   // L: center | high (M in the upper third, card below) | left (orb top-left, cards right)
+let COLOR = true;        // O: pink → violet palette vs pure white
+// palette: white → blush → pink → violet → indigo, quantized so cells never allocate strings per frame
+const STOPS = [[255, 255, 255], [255, 184, 236], [255, 111, 216], [168, 85, 247], [99, 102, 241]];
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, sat, l];
+}
+const STOPS_HSL = STOPS.map(c => rgb2hsl(...c));
+const PAL = new Array(32).fill("#fff");
+function buildPal(hueShift, satMul) {
+  for (let n = 0; n < 32; n++) {
+    const t = n / 31 * (STOPS.length - 1), k = Math.min(STOPS.length - 2, Math.floor(t)), f = t - k;
+    const a = STOPS_HSL[k], b = STOPS_HSL[k + 1];
+    let h = a[0] + (b[0] - a[0]) * f; const sat = clamp((a[1] + (b[1] - a[1]) * f) * satMul, 0, 1), l = a[2] + (b[2] - a[2]) * f;
+    h = (h + hueShift * Math.min(1, n / 6) + 360) % 360;       // white end stays white; the drift grows toward the violet end
+    PAL[n] = `hsl(${h.toFixed(1)},${(sat * 100).toFixed(1)}%,${(l * 100).toFixed(1)}%)`;
+  }
+}
+buildPal(0, 1);
+// colours travel through the pipeline as a palette position 0..1 so they can be blended per cell
+const col = t => t;
+const colStr = t => COLOR ? PAL[Math.max(0, Math.min(31, Math.round(t * 31)))] : "#fff";
+let curFill = "";
+// per-grid-cell state: this frame's target (size, alpha, colour, isM) and the eased current values.
+// Every draw call lands here; flushCells() eases toward the targets and paints. That is what makes
+// size and colour changes glide instead of snap.
+let GN = 0, tS, tA, tC, tM, cS, cA, cC, cM;
+function allocGrid() {
+  GN = cols * rows;
+  tS = new Float32Array(GN); tA = new Float32Array(GN); tC = new Float32Array(GN); tM = new Uint8Array(GN);
+  cS = new Float32Array(GN); cA = new Float32Array(GN); cC = new Float32Array(GN); cM = new Uint8Array(GN);
+}
+let boardPat = null, boardKey = "", boardTiles = [], boardPat2 = null;
+let BRD = null, BRD2 = null, LIFT = null, LIFT2 = null, brdKey = "", MSK = null, MSK2 = null, MSKimg = null, MSKimg2 = null, mskW = 0, mskH = 0;
+const layoutTarget = { i: 0, j: 0 }; let ANIMATE_LAYOUT = false;
+
+function layout() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  mainCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  scn.width = tmp.width = canvas.width; scn.height = tmp.height = canvas.height;
+  scnCtx.setTransform(DPR, 0, 0, DPR, 0, 0); tmpCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const lay = LAYOUT === "left" ? 0.62 : LAYOUT === "answer" ? 0.85 : 1;
+  const MWg = MW / D * DG, MHg = MH / D * DG;                 // the M's footprint at the grid's density
+  cs = Math.max(2, Math.floor(Math.min(W * 0.36 * mScale * lay / MWg, H * 0.46 * mScale * lay / MHg)));
+  cols = Math.ceil(W / cs); rows = Math.ceil(H / cs);
+  allocGrid();
+  const tI = LAYOUT === "left" ? Math.round(cols * 0.26 - MW / 2) : LAYOUT === "answer" ? Math.round(cols * 0.7 - MW / 2) : Math.round((cols - MW) / 2);
+  const tJ = LAYOUT === "high" ? Math.round(rows * 0.3 - MH / 2) : LAYOUT === "left" ? Math.round(rows * 0.42 - MH / 2) : LAYOUT === "answer" ? Math.round(rows * 0.72 - MH / 2) : Math.round((rows - MH) / 2 + rows * 0.03);
+  // the M glides to its new spot in whole cells (a few per frame) instead of jumping
+  if (mi0 === 0 && mj0 === 0 || !ANIMATE_LAYOUT) { mi0 = tI; mj0 = tJ; }
+  layoutTarget.i = tI; layoutTarget.j = tJ;
+  boardKey = "";
+  cx = mi0 + MW / 2; cy = mj0 + MH / 2;   // M center in grid coords
+}
+window.addEventListener("resize", layout);
+
+// one white square, inset inside its slot; size snaps to whole device pixels
+function cell(gi, gj, frac, alpha = 1, isM = false, color = 0) {
+  if (gi < 0 || gj < 0 || gi >= cols || gj >= rows) return;
+  const k = gj * cols + gi, t = typeof color === "number" ? color : 0;
+  // several things can land on one cell in a frame: the brightest wins, but the M always owns its cells
+  if (isM || !tM[k] && frac * alpha > tS[k] * tA[k]) { tS[k] = frac; tA[k] = alpha; tC[k] = t; tM[k] = isM ? 1 : 0; }
+}
+// ease every cell toward its target and paint it. Attack is quick, release slower, so things appear
+// crisply and fade out softly; colour glides between palette positions.
+let snapT = 9;   // seconds since the last state/layout change
+function flushCells() {
+  // just after a state change the whole field responds snappier, so the old state doesn't ghost under the new one
+  const snap = 1 - smoothstep(0.15, 0.8, snapT);
+  const aUp = 0.45 + 0.35 * snap, aDown = 0.16 + 0.34 * snap, sRate = 0.35 + 0.35 * snap, cRate = 0.3 + 0.3 * snap;
+  const aDownM = 0.55;                                          // M cells (the wipe) always switch crisply
+  for (let k = 0; k < GN; k++) {
+    const ts = tS[k], ta = tA[k];
+    if (ts <= 0 && cA[k] < 0.01) { if (cA[k] !== 0) { cA[k] = 0; cS[k] = 0; } continue; }
+    if (ts > 0) {
+      cS[k] += (ts - cS[k]) * (cS[k] < 0.01 ? 1 : sRate);
+      cA[k] += (ta - cA[k]) * (ta > cA[k] ? aUp : (tM[k] ? aDownM : aDown));
+      cC[k] += (tC[k] - cC[k]) * (cA[k] < 0.05 ? 1 : cRate);
+      cM[k] = tM[k];
+    } else {
+      cA[k] += (0 - cA[k]) * (cM[k] ? aDownM : aDown);    // nothing here now: fade out in place (M cells crisply)
+    }
+    tS[k] = 0; tA[k] = 0; tM[k] = 0;
+    if (cA[k] < 0.01) continue;
+    rawCell(k % cols, (k - k % cols) / cols, cS[k], cA[k], cM[k] === 1, colStr(cC[k]));
+  }
+}
+function rawCell(gi, gj, frac, alpha, isM, color) {
+  if (color !== curFill) { ctx.fillStyle = color; curFill = color; }
+  // sizes are continuous (not snapped to device pixels) so a dot growing or shrinking eases instead of popping;
+  // positions stay grid-locked, which is where the pixel grammar lives
+  const sz = Math.max(0.75, cs * clamp(frac, 0, 1));
+  const ins = (cs - sz) / 2;
+  if (alpha < 0.995) ctx.globalAlpha = alpha; else ctx.globalAlpha = 1;
+  const x = gi * cs + ins, y = gj * cs + ins;
+  const round = SHAPE === "round" || (SHAPE === "mixed" && !isM);
+  if (round) { ctx.beginPath(); ctx.arc(x + sz / 2, y + sz / 2, sz / 2, 0, 6.2832); ctx.fill(); }
+  else ctx.fillRect(x, y, sz, sz);
+}
+
+// pointer in grid coords + agitation energy (speed-driven radius, as in mist.html)
+const P = { x: -1, y: -1, en: 0, lastT: 0, lx: 0, ly: 0 };
+window.addEventListener("pointermove", e => {
+  const gx = e.clientX / cs, gy = e.clientY / cs;
+  const now = performance.now();
+  if (P.x >= 0) {
+    const sp = Math.hypot(gx - P.lx, gy - P.ly) / Math.max(8, now - P.lastT) * 16;
+    P.en = Math.min(1.6, P.en + sp * 0.35);
+  }
+  P.x = gx; P.y = gy; P.lx = gx; P.ly = gy; P.lastT = now;
+});
+window.addEventListener("pointerleave", () => { P.x = P.y = -1; });
+document.addEventListener("mouseleave", () => { P.x = P.y = -1; });
+// radial bulge field: pixels never land on each other (sqrt(r²+a²) is monotone)
+function bulge(i, j, out) {
+  out[0] = out[1] = out[2] = 0;
+  if (P.x < 0) return false;
+  const PR = MW * 0.34 * (0.35 + 0.75 * P.en);
+  const rr = Math.hypot(i - P.x, j - P.y);
+  if (rr > PR * 1.3) return false;
+  const hv = hash(i, j);
+  const nx = rr > 0.001 ? (i - P.x) / rr : Math.cos(hv * 6.283);
+  const ny = rr > 0.001 ? (j - P.y) / rr : Math.sin(hv * 6.283);
+  const rim = vnoise2(nx * 2.1 + T * 0.55, ny * 2.1 + 7.3 + T * 0.4);
+  const hole = PR * 0.42 * (0.78 + 0.44 * rim);
+  const R2 = PR * (0.88 + 0.24 * rim);
+  if (rr >= R2) return false;
+  const prox = 1 - rr / R2;
+  const fall = 1 - smoothstep(0.55, 1, rr / R2);
+  const disp = (Math.sqrt(rr * rr + hole * hole) - rr) * fall;
+  const sw = (vnoise2(i * 0.16 + T * 0.5, j * 0.16 - T * 0.3) - 0.5) * disp * 0.4;
+  out[0] = nx * disp - ny * sw; out[1] = ny * disp + nx * sw; out[2] = prox;
+  return true;
+}
+const BO = [0, 0, 0];
+// springs: pushed cells chase the cursor fast, come home heavy with a little swing
+function springM(k, tdx, tdy, sub) {
+  const pushing = Math.abs(tdx) + Math.abs(tdy) > 0.01;
+  const stiff = pushing ? 0.08 : 0.035, damp = pushing ? 0.84 : 0.9;
+  for (let n = 0; n < sub; n++) {
+    SVX[k] = (SVX[k] + (tdx - SX[k]) * stiff) * damp; SVY[k] = (SVY[k] + (tdy - SY[k]) * stiff) * damp;
+    SX[k] += SVX[k]; SY[k] += SVY[k];
+  }
+  if (Math.abs(SX[k]) < 0.01 && Math.abs(SVX[k]) < 0.01) SX[k] = SVX[k] = 0;
+  if (Math.abs(SY[k]) < 0.01 && Math.abs(SVY[k]) < 0.01) SY[k] = SVY[k] = 0;
+}
+// the M's growth rings: empty cells 1 and 2 steps outside the letterform. On loud parts they light
+// up in order, so the whole mark swells by whole cells instead of just brightening.
+let GROW1 = [], GROW2 = [];
+const NP = 144; const PROF = new Float32Array(NP).fill(1);
+function buildProfile() {
+  const mx = MW / 2, my = MH / 2, raw = new Float32Array(NP).fill(0);
+  for (const c of MC) {
+    const dx = c.i + 0.5 - mx, dy = c.j + 0.5 - my, r = Math.hypot(dx, dy);
+    const b = Math.floor(fract(Math.atan2(dy, dx) / 6.283) * NP);
+    if (r > raw[b]) raw[b] = r;
+  }
+  for (let b = 0; b < NP; b++) if (!raw[b]) { let k = 1; while (!raw[(b + k) % NP] && !raw[(b - k + NP) % NP] && k < NP) k++; raw[b] = raw[(b + k) % NP] || raw[(b - k + NP) % NP]; }
+  const tmp = new Float32Array(NP);
+  for (let pass = 0; pass < 3; pass++) { for (let b = 0; b < NP; b++) tmp[b] = (raw[(b + NP - 1) % NP] + raw[b] * 2 + raw[(b + 1) % NP]) / 4; raw.set(tmp); }
+  let mean = 0; for (let b = 0; b < NP; b++) mean += raw[b]; mean /= NP;
+  for (let b = 0; b < NP; b++) PROF[b] = raw[b] / mean;
+}
+// shape factor at angle fraction af: 1 = circle, prof = the M's outline, mix blends between them
+function shapeAt(af, mix) { const x = af * NP, b0 = Math.floor(x) % NP, f = x - Math.floor(x); const pr = PROF[b0] * (1 - f) + PROF[(b0 + 1) % NP] * f; return 1 + (pr - 1) * mix; }
+function buildGrow() {
+  const set = new Set(MC.map(c => c.i + "," + c.j)), r1 = new Map(), r2 = new Map();
+  for (const c of MC) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const k = (c.i + dx) + "," + (c.j + dy); if (!set.has(k) && !r1.has(k)) r1.set(k, { i: c.i + dx, j: c.j + dy, tx: c.tx, hv: hash(c.i + dx, c.j + dy) });
+  }
+  for (const c of r1.values()) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const k = (c.i + dx) + "," + (c.j + dy); if (!set.has(k) && !r1.has(k) && !r2.has(k)) r2.set(k, { i: c.i + dx, j: c.j + dy, tx: c.tx, hv: hash(c.i + dx, c.j + dy) });
+  }
+  GROW1 = [...r1.values()]; GROW2 = [...r2.values()];
+}
+buildGrow(); buildProfile();
+let grow = 0;   // eased loudness that drives the swell
+const GROWTH = false;   // the cell-ring swell read as a hard border; off. Loudness lives in cell size and the ring now.
+// thinking: the logo's draw-in, looped. The letterform is written along the stroke, holds, is un-written
+// the same way, then a beat of dark. thinkMix eases 0 → 1 so entering/leaving thinking crossfades.
+const WIPE = { inDur: 0.9, hold: 0.7, outDur: 0.8, gap: 0.35, edge: 0.12 };
+let thinkMix = 0, wipeT0 = 0;
+function wipeAlpha(c) {
+  const cyc = WIPE.inDur + WIPE.hold + WIPE.outDur + WIPE.gap, e = WIPE.edge;
+  const t = fract((T - wipeT0) / cyc) * cyc;
+  if (t < WIPE.inDur) return clamp((t / WIPE.inDur * (1 + e) - c.rev) / e, 0, 1);
+  if (t < WIPE.inDur + WIPE.hold) return 1;
+  if (t < WIPE.inDur + WIPE.hold + WIPE.outDur) { const p = (t - WIPE.inDur - WIPE.hold) / WIPE.outDur; return 1 - clamp((p * (1 + e) - c.rev) / e, 0, 1); }
+  return 0;
+}
+const wipeFn = c => 1 - thinkMix * (1 - wipeAlpha(c));
+// Draw the M. sizeFn(cell, k) -> frac; leaves per-cell displaced positions in MP for shedding etc.
+function drawM(sizeFn, alphaFn, sub) {
+  if (!alphaFn && thinkMix > 0.001) alphaFn = wipeFn;
+  const L = voice.level;
+  const crumbleT = Math.floor(T * 1.5);
+  grow += (L - grow) * (L > grow ? 0.25 : 0.06);
+  const g1 = smoothstep(0.25, 0.6, grow), g2 = smoothstep(0.55, 0.95, grow);
+  if (GROWTH) for (const c of GROW2) { const w = g2 * (1 - smoothstep(0.35, 0.9, c.tx)); if (w > 0.02 && c.hv < w) cell(mi0 + c.i, mj0 + c.j, 0.2 + 0.3 * w, 0.5 * w, true, col(0.2 + 0.5 * c.tx)); }
+  if (GROWTH) for (const c of GROW1) { const w = g1 * (1 - smoothstep(0.35, 0.9, c.tx)); if (w > 0.02 && c.hv < w + 0.15) cell(mi0 + c.i, mj0 + c.j, 0.25 + 0.45 * w, 0.45 + 0.5 * w, true, col(0.1 + 0.5 * c.tx)); }
+  for (let k = 0; k < MC.length; k++) {
+    const c = MC[k], gi = mi0 + c.i, gj = mj0 + c.j;
+    bulge(gi, gj, BO);
+    springM(k, BO[0], BO[1], sub);
+    MPROX[k] = BO[2];
+    const dx = Math.round(SX[k]), dy = Math.round(SY[k]);
+    MP[k * 2] = gi + dx; MP[k * 2 + 1] = gj + dy;
+    let f = sizeFn(c, k) * (1 - 0.2 * BO[2]);
+    let loose = 0;
+    if (c.rightness > 0.05) {
+      // the cell is consumed as its stream pixel leaves (quick dip just before the 2 s cycle wraps), then refills
+      const ph = fract(T * 0.5 + c.hv);
+      f *= 1 - 0.55 * c.rightness * smoothstep(0.82, 0.98, ph) * (1 - smoothstep(0.98, 1.0, ph));
+      // a share of edge cells sit loose, one cell off to the right, re-rolled a few times a second
+      // (no loose cells: the dip alone ties each pixel to the cell it left)
+    }
+    const al = alphaFn ? alphaFn(c, k) : 1; MA[k] = al;
+    if (al < 0.01) continue;                                       // not written yet: the cell is free (and sheds nothing)
+    cell(gi + dx + loose, gj + dy, loose ? f * 0.75 : f, al, true, col(smoothstep(0.55, 1, c.tx) * 0.22 + 0.15 * loose));
+  }
+}
+// the empty-cell board: one tiny dot per slot, drawn as a repeating pattern (one fill for the whole screen)
+function drawBoard() {
+  const key = `${cs}|${SHAPE}|${DPR}|${COLOR}`;
+  if (boardKey !== key) {
+    const N = 32, t = document.createElement("canvas"); t.width = t.height = cs * N * DPR;   // 32 cells per tile: no visible repeat
+    const g = t.getContext("2d"); g.scale(DPR, DPR); g.fillStyle = COLOR ? "#cdb6ff" : "#fff";
+    boardTiles = [];
+    const makeTile = seed => {
+      const tc = document.createElement("canvas"); tc.width = tc.height = cs * N * DPR;
+      const gg = tc.getContext("2d"); gg.scale(DPR, DPR); gg.fillStyle = COLOR ? "#cdb6ff" : "#fff";
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const hv = hash(i * 1.7 + 3 + seed, j * 2.3 + 7 + seed * 0.7);
+        const sz = Math.max(1, cs * (0.22 + 0.24 * hv)), ins = (cs - sz) / 2;
+        gg.globalAlpha = 0.6 + 0.4 * hash(i + 11 + seed, j + 5);
+        const x = i * cs + ins, y = j * cs + ins;
+        if (SHAPE !== "square") { gg.beginPath(); gg.arc(x + sz / 2, y + sz / 2, sz / 2, 0, 6.2832); gg.fill(); } else gg.fillRect(x, y, sz, sz);
+      }
+      const pat = mainCtx.createPattern(tc, "repeat"); const mm = new DOMMatrix(); mm.a = mm.d = 1 / DPR; pat.setTransform(mm); return pat;
+    };
+    boardPat = makeTile(0); boardPat2 = makeTile(19);
+    boardKey = key; brdKey = "";
+  }
+  // full-res copies of the board (normal dots, and a swollen variant) for the living-field masks
+  const bk = `${key}|${W}|${H}`;
+  if (brdKey !== bk) {
+    brdKey = bk;
+    const mk = () => { const c = document.createElement("canvas"); c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); return c; };
+    BRD = mk(); BRD2 = mk(); LIFT = mk(); LIFT2 = mk();
+    const N = 32, big = document.createElement("canvas"); big.width = big.height = cs * N * DPR;
+    const gg = big.getContext("2d"); gg.scale(DPR, DPR); gg.fillStyle = COLOR ? "#8b5cf6" : "#fff";          // swell layer: violet
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const hv = hash(i * 1.7 + 3, j * 2.3 + 7), sz = cs * (0.42 + 0.2 * hv), x = i * cs + cs / 2, y = j * cs + cs / 2;
+      gg.globalAlpha = 0.7 + 0.3 * hash(i + 11, j + 5);
+      if (SHAPE !== "square") { gg.beginPath(); gg.arc(x, y, sz / 2, 0, 6.2832); gg.fill(); } else gg.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+    }
+    const bigPat = mainCtx.createPattern(big, "repeat"); const mm = new DOMMatrix(); mm.a = mm.d = 1 / DPR; bigPat.setTransform(mm);
+    for (const [cv, pat] of [[BRD, boardPat], [BRD2, bigPat]]) { const g = cv.getContext("2d"); g.scale(DPR, DPR); g.fillStyle = pat; g.fillRect(0, 0, W, H); }
+    // tint the brightness copy pink-violet so lifted dots read as colour, not as white competing with the M
+    if (COLOR) { const g = BRD.getContext("2d"); g.globalCompositeOperation = "source-atop"; g.fillStyle = "#b07ae8"; g.fillRect(0, 0, W, H); g.globalCompositeOperation = "source-over"; }
+  }
+  // two tiles cross-fade on a slow clock, so every dot's size and brightness drifts a little instead of sitting still
+  const mix = 0.5 + 0.5 * Math.sin(T * 0.35);
+  ctx.globalAlpha = 0.36 * (1 - mix * 0.7); ctx.fillStyle = boardPat; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 0.36 * (0.3 + mix * 0.7); ctx.fillStyle = boardPat2; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#fff"; curFill = "#fff"; ctx.globalAlpha = 1;
+}
+// the board is not inert: grid dots around the M brighten with the voice, and every shed
+// particle leaves a faint wake on the dots it passes, so the whole surface reads as disturbed
+const WAVES = []; let waveCool = 0; let haloOuter = 0, haloMix = 0, haloFrame = 0;
+let FLD = null, FLDc = 0, FLDr = 0;
+const BPULSES = []; let bpCool = 0, bpIdle = 0;
+const FCG = 4;   // the ambient field is sampled every 4 cells and interpolated: cheap, and the swells are broad anyway
+function drawBoardAura(L) {
+  // 1. the living board: every dot rides slow ambient swells (two drifting noise layers) plus ripples that leave
+  // the M with the voice. Quiet = a faint breath; speech = the ripples run out to the corners. Done as a low-res
+  // brightness mask (one pixel per 2x2 cells) applied to a cached full-res copy of the board, so it costs a few
+  // GPU blits instead of tens of thousands of dots. A second, swollen-dot copy shows through where the field peaks.
+  const R = Math.hypot(cols, rows) * 0.5;                    // reaches the screen corners
+  const F = voice.level;
+  const fc = Math.ceil(cols / FCG) + 2, frn = Math.ceil(rows / FCG) + 2;
+  if (!FLD || FLDc !== fc || FLDr !== frn) { FLD = new Float32Array(fc * frn); FLDc = fc; FLDr = frn; }
+  for (let jj = 0; jj < frn; jj++) for (let ii = 0; ii < fc; ii++) {
+    const x = ii * FCG / D, y = jj * FCG / D;
+    FLD[jj * fc + ii] = 0.65 * vnoise2(x * 0.045 + T * 0.10, y * 0.045 - T * 0.07) + 0.35 * vnoise2(x * 0.13 - T * 0.17 + 5.1, y * 0.13 + T * 0.13);
+  }
+  const mw = Math.ceil(cols / 2), mh = Math.ceil(rows / 2);
+  if (!MSK || mskW !== mw || mskH !== mh) {
+    mskW = mw; mskH = mh;
+    MSK = document.createElement("canvas"); MSK.width = mw; MSK.height = mh; MSK2 = document.createElement("canvas"); MSK2.width = mw; MSK2.height = mh;
+    MSKimg = MSK.getContext("2d").createImageData(mw, mh); MSKimg2 = MSK2.getContext("2d").createImageData(mw, mh);
+    MSKimg.data.fill(255); MSKimg2.data.fill(255);
+  }
+  // board pulses: born at the ring around the M (or at the parked M's edge in answering mode) on syllables, one soft
+  // ambient one every few seconds when nothing is said. Each travels outward, widening and fading; no standing pattern.
+  const r0 = (haloFrame > 0.5 || LAYOUT === "answer") ? Math.hypot(MW, MH) * 0.6 : (haloOuter || Math.hypot(MW, MH) * 0.9);
+  bpCool -= 1 / 60; bpIdle += 1 / 60;
+  if (voice.onset > 0.3 && bpCool <= 0 && BPULSES.length < 6) { BPULSES.push({ r: r0, s: clamp(0.35 + voice.onset * 0.9, 0.4, 1) }); bpCool = 0.38; bpIdle = 0; }
+  else if (bpIdle > 2.6 && BPULSES.length < 6) { BPULSES.push({ r: r0, s: 0.3 }); bpIdle = 0; }
+  const vMaxB = Math.hypot(cols, rows) * 0.75;
+  for (let n = BPULSES.length - 1; n >= 0; n--) {
+    const w = BPULSES[n]; w.r += (9 + 6 * w.s) * D / 60; w.life = 1 - (w.r - r0) / Math.max(1, vMaxB - r0);
+    if (w.life <= 0.02) BPULSES.splice(n, 1); else w.wd = (2 + 3.5 * (1 - w.life)) * D;
+  }
+  const ambT = 0.42, gain = 1.45 * (0.75 + 0.5 * F);
+  const d1 = MSKimg.data, d2 = MSKimg2.data;
+  for (let py = 0; py < mh; py++) {
+    const j = py * 2 + 1, fy = j / FCG, jj = Math.min(frn - 2, Math.floor(fy)), vy = fy - jj, dy = j - cy;
+    for (let px = 0; px < mw; px++) {
+      const i = px * 2 + 1, fx = i / FCG, ii = Math.min(fc - 2, Math.floor(fx)), vx = fx - ii, k0 = jj * fc + ii;
+      const amb = (FLD[k0] * (1 - vx) + FLD[k0 + 1] * vx) * (1 - vy) + (FLD[k0 + fc] * (1 - vx) + FLD[k0 + fc + 1] * vx) * vy;
+      const r = Math.hypot(i - cx, dy);
+      let pulse = 0;
+      for (let n = 0; n < BPULSES.length; n++) { const w = BPULSES[n], d = (r - w.r) / w.wd; if (d > -2.5 && d < 2.5) pulse += w.s * Math.pow(w.life, 1.3) * Math.exp(-d * d); }
+      const base = (amb - ambT) * gain, v = base + pulse * 0.6;
+      const q = (py * mw + px) * 4 + 3;
+      d1[q] = v <= 0 ? 0 : v >= 1 ? 255 : (v * 255) | 0;
+      const v2 = (base + pulse * 0.3 - 0.55) * 2.4;                    // pulses mostly brighten; they swell the dots only a little
+      d2[q] = v2 <= 0 ? 0 : v2 >= 1 ? 255 : (v2 * 255) | 0;
+    }
+  }
+  MSK.getContext("2d").putImageData(MSKimg, 0, 0); MSK2.getContext("2d").putImageData(MSKimg2, 0, 0);
+  const pw = cols * cs * DPR, ph = rows * cs * DPR;
+  for (const [lift, brd, msk] of [[LIFT, BRD, MSK], [LIFT2, BRD2, MSK2]]) {
+    const g = lift.getContext("2d");
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, lift.width, lift.height);
+    g.drawImage(brd, 0, 0);
+    g.globalCompositeOperation = "destination-in"; g.imageSmoothingEnabled = true;
+    g.drawImage(msk, 0, 0, mw, mh, 0, 0, pw, ph);
+  }
+  ctx.globalAlpha = 0.34; ctx.drawImage(LIFT, 0, 0, W, H);
+  ctx.globalAlpha = 0.34; ctx.drawImage(LIFT2, 0, 0, W, H);
+  ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; curFill = "#fff";
+  // 2. pressure waves: each syllable sends a ring across the whole board, past the halo, out to the edges
+  waveCool -= 1 / 60;
+  const framed = haloFrame > 0.5;
+  const parked = LAYOUT === "answer";
+  if (voice.onset > 0.3 && waveCool <= 0 && WAVES.length < 5 && !parked && !framed) {
+    // framed: born at the screen edge, travelling inward. Otherwise: born at the ring, travelling out.
+    WAVES.push(framed ? { r: 1.0, s: clamp(voice.onset * 1.2, 0.35, 1), age: 0, inward: true } : { r: haloOuter || Math.hypot(MW, MH) * 0.9, s: clamp(voice.onset * 1.2, 0.35, 1), age: 0, mix: haloMix });
+    waveCool = 0.45;
+  }
+  const vMax = Math.hypot(cols, rows) * 0.6;
+  const ha = cols / 2 - 2.5 * D, hb = rows / 2 - 2.5 * D;
+  const rectR = af => { const th = af * 6.283, c = Math.abs(Math.cos(th)), sn = Math.abs(Math.sin(th)); return 1 / Math.pow(Math.pow(c / ha, 4) + Math.pow(sn / hb, 4), 0.25); };
+  for (let n = WAVES.length - 1; n >= 0; n--) {
+    const w = WAVES[n]; w.age += 1 / 60;
+    let life;
+    if (w.inward) { w.r -= 0.22 / 60 * (1 + 0.4 * w.s); life = w.r / 1.0; }          // fraction of the frame radius, 1 → 0
+    else { w.r += (11 + 6 * w.s) * D / 60; life = 1 - (w.r - (haloOuter || 0)) / (vMax - (haloOuter || 0)); }
+    if (life <= 0.02) { WAVES.splice(n, 1); continue; }
+    // a ring of particles: clean at birth, then it dissolves in noisy clumps (not uniformly) and drifts apart
+    const N = 280;
+    const scatter = (0.6 + 9 * (1 - life)) * D, keep = Math.pow(life, 0.8);
+    const ox = w.inward ? cols / 2 : cx, oy = w.inward ? rows / 2 : cy;
+    for (let q = 0; q < N; q++) {
+      const ang = (q + 0.5) / N * 6.283 + (hash(q, n * 3 + 2) - 0.5) * 0.03;
+      // dissolution field: low-frequency noise over angle and travel, so holes open as patches
+      const nz = vnoise2(Math.cos(ang) * 2.2 + n * 3.1, Math.sin(ang) * 2.2 + (w.inward ? (1 - w.r) * 6 : w.r * 0.08));
+      const hq = hash(q, n * 3 + 1);
+      if (nz * 0.65 + hq * 0.35 > keep) continue;
+      const rr = w.inward ? rectR(fract(ang / 6.283)) * w.r + (hash(q, n * 3 + 3) - 0.5) * scatter * 0.6
+                          : w.r * shapeAt(fract(ang / 6.283), haloMix) + (hash(q, n * 3 + 3) - 0.5) * scatter * (0.4 + 0.6 * hq);
+      const gi = Math.round(ox + Math.cos(ang) * rr), gj = Math.round(oy + Math.sin(ang) * rr);
+      if (gi < 0 || gj < 0 || gi >= cols || gj >= rows) continue;
+      cell(gi, gj, (0.18 + 0.32 * life) * w.s * (0.6 + 0.6 * nz) + 0.1, (0.15 + 0.5 * life) * w.s * (0.5 + 0.7 * nz), false, col(0.55 + 0.35 * (1 - life)));
+    }
+  }
+}
+
+// particle pool (grid-locked when drawn)
+const PARTS = [];
+function spawn(x, y, vx, vy, life, size) { if (PARTS.length < 2400) PARTS.push({ x, y, vx, vy, age: 0, life, size, h: Math.random() }); }
+function stepParts(dt, drift) {
+  for (let n = PARTS.length - 1; n >= 0; n--) {
+    const p = PARTS[n];
+    p.age += dt; if (p.age >= p.life) { PARTS[n] = PARTS[PARTS.length - 1]; PARTS.pop(); continue; }
+    if (drift) drift(p, dt);
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    const u = p.age / p.life;
+    const f = p.size * (1 - 0.85 * u * u);
+    if (f < 0.1) continue;
+    cell(Math.round(p.x), Math.round(p.y), f, (1 - u * u) * 0.9, false, col(0.45 + 0.5 * u));
+  }
+}
+
+// cell size grammar from the mist-logo component: (0.84 - 0.55*rightness) * noise pulse, so the
+// left of the M is solid and the right edge thins into mist. `boost` adds the voice on top.
+function mistFrac(c, boost = 0) {
+  const wob = vnoise2(c.i * 0.09 / D + T * 0.5, c.j * 0.09 / D + T * 0.2);       // original broad field
+  const fine = vnoise2(c.i * 0.42 / D + T * 0.35 + 9, c.j * 0.42 / D - T * 0.22);   // finer layer: cell-to-cell texture
+  const pulse = 0.66 + 0.16 * wob + 0.26 * fine;                                  // 0.66 … 1.08
+  return clamp((0.86 - 0.55 * c.rightness) * pulse * (1 + boost * 0.4), 0.12, 0.95);
+}
+const STREAM = [];   // this frame's stream cells [gi, gj, p] for the ring interaction
+function streamM(L, O) {
+  STREAM.length = 0;
+  const travel = 1.2 * MW * (LAYOUT === "answer" ? 1.3 : 1);   // original reach; the parked M reaches a bit further
+  const speed = 1;                                          // original: one run every 2 s, constant
+  const spread = 0.9, buoy = 0.3;
+  // at finer grids there are D² times more source cells: thin the emitters so the cloud keeps the original's weight.
+  // The stream is the resting behaviour (always on, like the logo); the voice only thickens it a little.
+  const dens = (0.75 + 0.25 * grow) / D;
+  for (let k = 0; k < MC.length; k++) {
+    const c = MC[k];
+    const shed = Math.max(c.rightness * 0.95, MPROX[k] * 0.85) * MA[k];
+    if (shed < 0.05) continue;
+    const x0 = MP[k * 2], y0 = MP[k * 2 + 1];
+    for (let q = 0; q < 3; q++) {
+      if (hash(c.i + q * 11, c.j + 3.1) > shed * dens) continue;
+      const p = fract(T * speed * 0.5 + c.hv + q * 0.618);
+      const ez = p * p;
+      // the original's geometry: straight right, easing out, with a per-pixel vertical wobble and a little lift
+      const gi = x0 + Math.round(ez * travel);
+      const gj = y0 + Math.round(((hash(c.i + q * 13, c.j + q * 7) - 0.5) * spread * 3 * ez + Math.sin(ez * 5 + c.hv * 6.283) * 1.4 * ez - buoy * ez * 5) * D);
+      // snapped off: the pixel starts at the cell's own size and shrinks + fades the further right it gets
+      const sf = 0.55 - 0.42 * p;                               // original: 0.55 at the edge → 0.13 at the end
+      if (sf < 0.14) continue;
+      cell(gi, gj, sf, (1 - p * p) * 0.8, false, col(0.06 * p));   // white, like the M it left; it only fades, never turns pink
+      STREAM.push(gi, gj, p);
+    }
+  }
+}
+// inflow: the mirror of the shed. Pixels come in from the left inside the ring, small and violet far
+// out, growing and whitening as they arrive at the M's left strokes. Same 2 s cycle as the shed.
+function inflowM(L) {
+  const reach = Math.max(6 * D, Math.min(0.9 * MW, (haloOuter || MW) * 0.8 - MW / 2 - 3 * D));
+  const dens = (0.32 + 0.35 * grow) / D;
+  for (let k = 0; k < MC.length; k++) {
+    const c = MC[k];
+    const left = smoothstep(0.38, 0.0, c.tx) * MA[k];          // the left strokes gather
+    if (left < 0.05) continue;
+    const x0 = MP[k * 2], y0 = MP[k * 2 + 1];
+    for (let q = 0; q < 2; q++) {
+      if (hash(c.i + q * 17, c.j + 5.3) > left * dens) continue;
+      const p = fract(T * 0.5 + c.hv * 1.7 + q * 0.618);        // 0 = far out, 1 = arriving
+      const ez = (1 - p) * (1 - p);
+      const gi = x0 - Math.round(ez * reach);
+      const gj = y0 + Math.round(((hash(c.i + q * 19, c.j + q * 5) - 0.5) * 2.4 * ez + Math.sin(ez * 4 + c.hv * 6.283) * 1.2 * ez + 0.3 * ez * 4) * D);
+      const sf = 0.13 + 0.42 * p;
+      cell(gi, gj, sf, (1 - ez) * 0.75, false, col(0.15 + 0.8 * Math.sqrt(1 - p)));
+    }
+  }
+}
+// the M's right edge sheds mist in proportion to `rate`; cells under the pointer shed too
+function shedM(dt, rate, gust, L) {
+  for (let k = 0; k < MC.length; k++) {
+    const c = MC[k];
+    const w = Math.max(c.rightness * 0.9, MPROX[k] * 0.8) * rate * dt;
+    if (Math.random() < w)
+      spawn(MP[k * 2], MP[k * 2 + 1], (3 + 9 * c.hv) * gust * (0.7 + 0.6 * L) * D, ((Math.random() - 0.5) * 2.5 - 0.6) * D, 0.9 + 1.1 * Math.random(), 0.4 + 0.25 * c.hv);
+  }
+}
+const shedDrift = (p, d) => { p.vy += (vnoise2(p.x * 0.15 / D, p.y * 0.15 / D + T) - 0.5) * 6 * D * d; p.vx *= 1 - 0.5 * d; };
+
+// ---- looks. All compositing happens in device pixels on the main canvas.
+function channel(color, dx, dy, scale) {
+  // one color channel of the scene, offset/scaled about the center, added onto the main canvas
+  tmpCtx.setTransform(1, 0, 0, 1, 0, 0); tmpCtx.globalCompositeOperation = "source-over"; tmpCtx.globalAlpha = 1;
+  tmpCtx.fillStyle = "#000"; tmpCtx.fillRect(0, 0, tmp.width, tmp.height);
+  const w = scn.width, h = scn.height;
+  tmpCtx.drawImage(scn, (w - w * scale) / 2 + dx * DPR, (h - h * scale) / 2 + dy * DPR, w * scale, h * scale);
+  tmpCtx.globalCompositeOperation = "multiply"; tmpCtx.fillStyle = color; tmpCtx.fillRect(0, 0, tmp.width, tmp.height);
+  mainCtx.globalCompositeOperation = "lighter"; mainCtx.drawImage(tmp, 0, 0);
+}
+function composite(L) {
+  mainCtx.setTransform(1, 0, 0, 1, 0, 0); mainCtx.globalCompositeOperation = "source-over"; mainCtx.globalAlpha = 1;
+  mainCtx.fillStyle = "#000"; mainCtx.fillRect(0, 0, canvas.width, canvas.height);
+  const k = 1 + 2.5 * L;                                              // aberration breathes with the voice
+  if (LOOK === "chroma") {                                            // lateral RGB split
+    channel("#f00", -1.6 * k, 0, 1); channel("#0f0", 0, 0, 1); channel("#00f", 1.6 * k, 0, 1);
+  } else if (LOOK === "lens") {                                       // radial aberration: channels scale about the center
+    channel("#f00", 0, 0, 1 + 0.004 * k); channel("#0f0", 0, 0, 1); channel("#00f", 0, 0, 1 - 0.004 * k);
+  } else {
+    mainCtx.drawImage(scn, 0, 0);
+  }
+  if (LOOK === "glow" || LOOK === "crt") {                            // soft phosphor bloom
+    mainCtx.globalCompositeOperation = "lighter"; mainCtx.globalAlpha = LOOK === "crt" ? 0.3 : 0.18;
+    mainCtx.filter = `blur(${Math.round(11 * DPR)}px)`; mainCtx.drawImage(scn, 0, 0); mainCtx.filter = "none";
+  }
+  if (LOOK === "crt") {                                               // scanlines + a slight vignette
+    mainCtx.globalCompositeOperation = "source-over"; mainCtx.globalAlpha = 0.28; mainCtx.fillStyle = "#000";
+    const step = Math.max(2, Math.round(3 * DPR / 2) * 2);
+    for (let y = 0; y < canvas.height; y += step) mainCtx.fillRect(0, y, canvas.width, Math.max(1, step / 3));
+    const g = mainCtx.createRadialGradient(canvas.width / 2, canvas.height / 2, canvas.height * 0.35, canvas.width / 2, canvas.height / 2, canvas.height * 0.95);
+    g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.6)");
+    mainCtx.globalAlpha = 1; mainCtx.fillStyle = g; mainCtx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  mainCtx.globalCompositeOperation = "source-over"; mainCtx.globalAlpha = 1;
+  mainCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+// thinking "scan": a soft bright band sweeping the M left → right, on loop
+const scanBoost = c => { const s = fract(T * 0.55); const d = Math.abs(c.tx - s * 1.3 + 0.15); return Math.max(0, 1 - d / 0.22); };
+// idle breathing: a slow noise pulse over the letterform
+const breathe = (c, amt) => 1 - amt + amt * vnoise2(c.i * 0.12 + T * 0.35, c.j * 0.12 + T * 0.14);
+
+// ============================================================================
+// Variants
+// ============================================================================
+const V = [];
+
+// 01 · HALO — the M is the core; the orb from the current presentation mode
+// becomes a ring of grid-locked pixels around it. The same grammar can be tuned
+// into very different temperaments: VIBES holds those tunings, Y cycles them.
+const RING = Array.from({ length: 2700 }, (_, n) => ({ a: n / 2700 * 6.283 + hash(n, 1) * 0.02, r0: hash(n, 2), sp: 0.6 + hash(n, 3), h: hash(n, 4) }));
+const VIBES = {
+  //          density  rings (radius mult, spin dir)        push  size  jit  sparkle  spin  breath  hitPush hitCarry hitBlow  aBase aBand  shed  wobble ease
+  calm:    { shape: 0.6, spread: 0.25, thick: 0.04, haze: 0.10, dens: 0.55, rings: [[1.0, 1]], coherent: true,                    push: 0.04, size: 0.25, jit: 0,   spark: 0,   spin: 0, breath: 0.03, hitPush: 0.08, hitCarry: 1.5, hitBlow: 0,    aBase: 0.26, aBand: 0.25, shed: 0.5, wob: 0.02, ease: 2.5,
+             blurb: "Zen. One thin, slow ring. The voice only brightens it and leans it outward a hair. The mist barely stirs it. For when the M should feel like it is listening, not performing." },
+  pulse:   { shape: 1.3, spread: 0.3, thick: 0.06, haze: 0.12, dens: 0.8,  rings: [[1.0, 1]],                    push: 0,    size: 0.3,  jit: 0,   spark: 0,   spin: 0, breath: 0.14, hitPush: 0.1,  hitCarry: 2,   hitBlow: 0,    aBase: 0.3,  aBand: 0.3,  shed: 0.7, wob: 0.03, ease: 3, uniform: true,
+             blurb: "Heartbeat. The whole ring breathes in and out with loudness as one shape, no per-band sectors, so it reads as a pulse instead of a spectrum. Clean and symmetrical." },
+  orbit:   { shape: 1.1, spread: 0.5, thick: 0.06, haze: 0.16, dens: 0.5, rings: [[0.9, 1], [1.08, -1], [1.26, 1]], coherent: true, push: 0.08, size: 0.35, jit: 0, spark: 0, spin: 0, breath: 0.05, hitPush: 0.12, hitCarry: 3, hitBlow: 0.2, aBase: 0.32, aBand: 0.35, shed: 0.8, wob: 0.03, ease: 3,
+             blurb: "Orbits. Three thin rings at different radii, counter-rotating slowly. Bands nudge each ring a little; the mist stream parts them as it passes. Feels like a system, not a speaker." },
+  bloom:   { shape: 1.4, spread: 0.5, thick: 0.0, haze: 0.16, dens: 2.3, rings: [[0.94, 1]], fade: { width: 0.5, pow: 1.7 }, coherent: true, push: 0.02, size: 0.7,  jit: 0,   spark: 0,   spin: 0, breath: 0.03, hitPush: 0.04, hitCarry: 1.5, hitBlow: 0,      aBase: 0.36, aBand: 0.4, shed: 0.6, wob: 0.02, ease: 4,
+             blurb: "Bloom. A dense, soft band that never moves. The voice paints brightness and dot size around it by frequency, so it glows in patterns rather than jumping. Warm and quiet." },
+  wild:    { shape: 0.9, spread: 0.4, thick: 0.08, haze: 0.06, dens: 0.67, rings: [[1.0, 1]],                    push: 0.16, size: 0.5,  jit: 3,   spark: 0.3, spin: 0, breath: 0.02, hitPush: 0.2,  hitCarry: 5,   hitBlow: 0.9,  aBase: 0.3,  aBand: 0.35, shed: 1.0, wob: 0.05, ease: 5,
+             blurb: "The current one. Per-band sectors push, swell and scatter; the stream blows the ring open. Most energy, most chaos." },
+};
+const VIBE_NAMES = Object.keys(VIBES);
+let VIBE = "bloom";
+V.push({
+  name: "Halo", scale: 0.66,
+  get blurb() { return VIBES[VIBE].blurb; },
+  draw(dt, sub) {
+    const L = voice.level, B = voice.bands, O = voice.onset, vb = VIBES[VIBE];
+    const Rb = Math.hypot(MW, MH) * 0.5 * 1.35 + 3 * D;
+    thinkMix += ((state === "thinking" ? 1 : 0) - thinkMix) * Math.min(1, dt * 6);
+    const hide = smoothstep(0, 1, thinkMix);                         // thinking: the ring steps aside for the wipe
+    drawM(c => mistFrac(c, 0.05 * L), null, sub);
+    streamM(L, O); inflowM(L);
+    if (P.en > 0.08) shedM(dt, 1.2 * P.en * vb.shed, 1.7, L);        // pointer gusts only; the voice lives in the stream
+    // where the shed stream crosses the ring: bucket the live particles by angle around the M's center
+    const NB = 72; if (!this.bins) { this.bins = new Float32Array(NB); this.bins2 = new Float32Array(NB); this.hit = new Float32Array(NB); }
+    const bins = this.bins, bins2 = this.bins2; bins.fill(0);
+    for (const p of PARTS) {
+      const dx = p.x - cx, dy = p.y - cy, rel = Math.hypot(dx, dy) / Rb;
+      if (rel < 0.55 || rel > 1.7) continue;
+      const w = 1 - Math.abs(rel - 1) / 0.7;
+      bins[Math.floor(fract(Math.atan2(dy, dx) / 6.283) * NB)] += w * (1 - p.age / p.life) * 0.5;
+    }
+    for (let q = 0; q < STREAM.length; q += 3) {
+      const dx = STREAM[q] - cx, dy = STREAM[q + 1] - cy, rel = Math.hypot(dx, dy) / Rb;
+      if (rel < 0.55 || rel > 1.7) continue;
+      const w = 1 - Math.abs(rel - 1) / 0.7;
+      bins[Math.floor(fract(Math.atan2(dy, dx) / 6.283) * NB)] += w * (1 - STREAM[q + 2]) * 0.35;
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      for (let b = 0; b < NB; b++) bins2[b] = (bins[(b + NB - 1) % NB] + bins[b] * 2 + bins[(b + 1) % NB]) / 4;
+      bins.set(bins2);
+    }
+    for (let b = 0; b < NB; b++) { const tgt = Math.min(1, bins[b]); this.hit[b] += (tgt - this.hit[b]) * Math.min(1, dt * (tgt > this.hit[b] ? 10 : vb.ease)); }
+    const hitAt = af => { const x = af * NB, b0 = Math.floor(x) % NB, f = x - Math.floor(x); return this.hit[b0] * (1 - f) + this.hit[(b0 + 1) % NB] * f; };
+    // whole-ring breath (pulse vibe) eased so it has weight
+    this.breath = (this.breath || 0) + (L - (this.breath || 0)) * Math.min(1, dt * (L > (this.breath || 0) ? 2.8 : 1.1));
+    // the ring is where pulses are born: it flashes as one leaves, and tells the board where to start the wave
+    this.flash = Math.max((this.flash || 0) * Math.exp(-dt * 4), O > 0.3 ? O * 0.8 : 0);
+    haloOuter = Rb * Math.max(...vb.rings.map(r => r[0])) * (1 + 0.5 * vb.spread * this.breath) + 1.5 * D;
+    haloMix = clamp(vb.shape * this.breath * 1.2, 0, 0.7);      // same recipe as the ring's own shape mix, ring-wide
+    // rotation is the ambient behaviour: full speed when quiet, easing toward a hold as speech builds
+    this.spinEase = (this.spinEase || 0) + (L - (this.spinEase || 0)) * Math.min(1, dt * (L > (this.spinEase || 0) ? 4 : 1.2));
+    const spinBase = vb.spin * (1 - 0.9 * clamp(this.spinEase * 1.6, 0, 1));
+    const live = state === "speaking" || state === "listening";
+    // answering-you mode: the rings leave the M and become inner frames around the whole screen
+    this.frame = (this.frame || 0) + ((state === "speaking" ? 1 : 0) - (this.frame || 0)) * Math.min(1, dt * 1.4);
+    const fr = smoothstep(0, 1, this.frame);
+    haloFrame = fr;
+    // the frame is literally the screen edge: the outermost row/column of the dot grid, sharp corners.
+    // rectPt(u, d) → a point on the rectangle inset d cells at perimeter fraction u (clockwise from top-left) + its inward normal.
+    const RP = [0, 0, 0, 0];
+    const rectPt = (u, d, o) => {
+      const wa = cols - 1 - 2 * d, hb = rows - 1 - 2 * d, per = 2 * (wa + hb);
+      let sPos = fract(u) * per; const x0 = d, y0 = d, x1 = cols - 1 - d, y1 = rows - 1 - d;
+      if (sPos < wa) { o[0] = x0 + sPos; o[1] = y0; o[2] = 0; o[3] = 1; return o; } sPos -= wa;
+      if (sPos < hb) { o[0] = x1; o[1] = y0 + sPos; o[2] = -1; o[3] = 0; return o; } sPos -= hb;
+      if (sPos < wa) { o[0] = x1 - sPos; o[1] = y1; o[2] = 0; o[3] = -1; return o; } sPos -= wa;
+      o[0] = x0; o[1] = y1 - sPos; o[2] = 1; o[3] = 0; return o;
+    };
+    const uOff = (cols + rows / 2) / (2 * (cols + rows));             // angle 0 (right, middle) lands on the right edge's middle
+    const FDEPTH = Math.min(cols, rows) * 0.14;                       // how far the edge band fades inward
+    const skip = Math.max(1, Math.round(4.5 / (Math.min(3, D) * vb.dens * vb.rings.length ** 0.5)));
+    for (let ri = 0; ri < vb.rings.length; ri++) {
+      if (hide > 0.98) break;
+      const [rm, dir] = vb.rings[ri];
+      // orbital speeds: inner rings run fast, outer rings slow (∝ r^-2), and each ring turns as one body
+      // (small per-cell variance) so the eye reads rotation, not drift. Louder speech spins everything a bit faster.
+      const orbital = dir * Math.pow(rm, -2.2);
+      const keepF = Math.min(1, (1 + 1.6 * fr) / skip);                 // fraction of RING cells this vibe draws (more as the frame forms)
+      for (let n = ri; n < RING.length; n++) {
+        const p = RING[n];
+        if (hash(n, 5.5) > keepF) continue;
+        if (state === "idle" && p.h > 0.45) continue;
+        const coherence = vb.coherent ? 0.94 + 0.12 * p.h : p.sp;
+        const a = p.a + T * spinBase * orbital * coherence * 0.25 + Math.sin(T * 0.3 + p.h * 6.283) * 0.003;
+        const af = fract(a / 6.283);
+        // sector → band, interpolated so neighbours blend: lows at the bottom, highs at the top
+        const bf = Math.abs(fract(af + 0.25) - 0.5) * 2 * 7;
+        const k0 = Math.min(6, Math.floor(bf)), kf = bf - k0;
+        const band = live ? (vb.uniform ? L : B[k0] * (1 - kf) + B[k0 + 1] * kf) : 0;
+        const kw = bf / 7;
+        const pushW = vb.uniform ? 1 : Math.max(0, 1 - kw * 1.6);
+        const sizeW = vb.uniform ? 1 : Math.max(0, 1 - Math.abs(kw - 0.5) * 2.4);
+        const jitW = vb.uniform ? 0 : Math.max(0, (kw - 0.5) * 2);
+        const wob = vnoise2(Math.cos(a) * 1.6 + T * 0.4, Math.sin(a) * 1.6 + T * 0.3);
+        p.push = (p.push || 0) + (band * pushW - (p.push || 0)) * Math.min(1, dt * (band * pushW > (p.push || 0) ? 3.5 : 1.4));
+        const hit = hitAt(af) * (1 - fr);
+        const jit = jitW * band * (hash(n, Math.floor(T * 9)) - 0.5) * vb.jit * D;
+        // spacing: rings drift apart from the unit radius as loudness builds; thickness: each ring's
+        // radial scatter widens with its band, so a loud low end fattens the bottom of the ring
+        const rmE = 1 + (rm - 1) * (1 + vb.spread * this.breath);
+        const thick = 0.035 + vb.thick * (0.3 * this.breath + 0.7 * band);
+        const mix = clamp(vb.shape * (p.push * 1.1 + this.breath * 0.45), 0, 0.7);
+        const shp = shapeAt(af, mix);                                   // the pulse pushes out in the M's shape
+        let tF = 0, fadeA = 1, fadeS = 1;
+        if (vb.fade) {
+          tF = Math.pow(p.r0, vb.fade.pow);                         // most cells near the inner edge
+          fadeA = Math.pow(1 - tF, 2) + 0.04;                       // dimmer further out
+          fadeS = 1 - 0.5 * tF;                                     // smaller further out
+        }
+        let r = Rb * rmE * shp * (1 + tF * (vb.fade ? vb.fade.width * (1 + 0.6 * this.breath) : 0) + thick * (p.r0 - 0.5) * 2 + vb.wob * (wob - 0.5) + vb.breath * this.breath * 0.4)
+              + Rb * (0.03 * O * p.h + vb.hitPush * hit * (0.6 + 0.8 * p.h)) + jit;
+        let gx = cx + Math.cos(a) * r, gy = cy + Math.sin(a) * r;
+        if (fr > 0.001) {                                                // blend toward the screen edge
+          // the densest cells sit on the outermost row; deeper cells (tF) fade inward. The voice presses the band inward.
+          const depth = FDEPTH * (1 + 0.6 * this.breath) * tF + ri * 2.5 * D + thick * 6 * D * (p.r0 - 0.5) + p.push * 3 * D;
+          rectPt(af + uOff, Math.max(0, depth), RP);
+          gx = gx * (1 - fr) + RP[0] * fr; gy = gy * (1 - fr) + RP[1] * fr;
+        }
+        let gi = Math.round(gx), gj = Math.round(gy);
+        if (hit > 0.02) {
+          gi += Math.round(hit * vb.hitCarry * D * (0.5 + p.h));
+          gj += Math.round((hash(n, Math.floor(T * 5)) - 0.5) * vb.hitCarry * D * hit);
+          if (vb.hitBlow > 0 && hit > 0.45 && hash(n, 71) < (hit - 0.45) * vb.hitBlow) {
+            if (Math.random() < 0.06) spawn(gi, gj, (5 + 6 * Math.random()) * D, (Math.random() - 0.5) * 3 * D, 1.4 + Math.random(), 0.3 + 0.2 * p.h);
+            continue;
+          }
+        }
+        if (bulge(gi, gj, BO)) { gi += Math.round(BO[0]); gj += Math.round(BO[1]); }
+        if (vb.spark > 0 && jitW > 0 && band > 0.5 && hash(n, 3 + Math.floor(T * 9)) < band * jitW * vb.spark) continue;
+        const f = (0.32 + 0.3 * p.h) * fadeS * (0.8 + vb.size * band * sizeW + 0.15 * band + 0.5 * hit + 0.3 * this.flash) * (1 + 0.25 * fr);
+        cell(gi, gj, f, ((state === "idle" ? 0.3 : vb.aBase + 0.1 + vb.aBand * Math.max(band, L * 0.5)) + 0.4 * hit + 0.35 * this.flash) * fadeA * (1 + 0.6 * fr) * (1 - hide), false, col(clamp(0.98 - 0.5 * kw - 0.15 * hit + 0.12 * tF, 0.42, 1)));
+      }
+    }
+    // outer haze: past the last ring the board dots lift and fade out as a gradient, so the orb
+    // has an atmosphere instead of an edge. Wider and brighter with the voice, extended where the stream hits.
+    if (vb.haze > 0 && hide < 0.98) {
+      const Rout = Rb * Math.max(...vb.rings.map(r => r[0])) * (1 + 0.5 * vb.breath * this.breath) + 1.5 * D;
+      const reach = Rout * (0.9 + 0.5 * L);
+      const amp = vb.haze * (0.55 + 0.9 * L) * (1 - hide);
+      const i0 = Math.max(0, Math.floor(cx - Rout - reach)), i1 = Math.min(cols, Math.ceil(cx + Rout + reach));
+      const j0 = Math.max(0, Math.floor(cy - Rout - reach)), j1 = Math.min(rows, Math.ceil(cy + Rout + reach));
+      for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) {
+        const hv = hash(i, j); if (hv < 0.3) continue;
+        const dx = i - cx, dy = j - cy, r = Math.hypot(dx, dy);
+        if (r < Rout - 1.5 * D) continue;
+        const af = fract(Math.atan2(dy, dx) / 6.283);
+        const t = (r - Rout) / (reach * (1 + 0.8 * hitAt(af)));
+        if (t > 1) continue;
+        const g = t < 0 ? 1 : (1 - t) * (1 - t);                   // smooth gradient out from the last ring
+        const a = amp * g * (0.4 + 0.9 * (hv - 0.3)) * (0.7 + 0.3 * vnoise2(i * 0.12 / D + T * 0.2, j * 0.12 / D - T * 0.15));
+        if (a < 0.012) continue;
+        cell(i, j, 0.24 + 0.3 * g * (0.5 + L), a, false, col(0.8 + 0.15 * t));
+      }
+    }
+    // framed (answering): the frame itself sheds inward. Every few frame cells run a 2 s cycle of pixels
+    // leaving the edge toward the centre, shrinking and going violet, so the edges read as the source.
+    if (fr > 0.3) {
+      const every = Math.max(1, Math.round(skip * 1.2));
+      for (let n = 0; n < RING.length; n += every) {
+        const p = RING[n], af = fract(p.a / 6.283);
+        rectPt(af + uOff, 0, RP); const ex = RP[0], ey = RP[1], nx = RP[2], ny = RP[3];
+        for (let q = 0; q < 2; q++) {
+          if (hash(n + q * 31, 9.1) > 0.45 + 0.45 * L) continue;
+          const ph = fract(T * 0.5 + p.h * 1.3 + q * 0.618), ez = ph * ph;
+          const travel = FDEPTH * 2.4 * ez;                              // straight in from the edge, easing
+          const gi = Math.round(ex + nx * travel), gj = Math.round(ey + ny * travel);
+          cell(gi, gj, (0.46 - 0.32 * ph) * fr, (1 - ez) * 0.9 * fr, false, col(0.45 + 0.5 * ph));
+        }
+      }
+    }
+    // onset sparks (wild only): a second, faint ring just outside that appears on hard hits
+    if (vb.spark > 0 && O > 0.35) for (let n = 0; n < RING.length; n += 6) {
+      const p = RING[n]; if (p.h > O * 0.6) continue;
+      const a = p.a - T * 0.1; const r = Rb * (1.32 + 0.25 * O * p.h);
+      cell(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 0.2 + 0.2 * O, O * 0.4, false, col(0.5));
+    }
+    stepParts(dt, shedDrift);
+  }
+});
+
+// 02 · BREATH — no orb at all. The letterform itself inhales on the voice and
+// sheds mist off its right edge, the same gesture as the logo's blow.
+V.push({
+  name: "Breath", scale: 1,
+  blurb: "No orb. The letterform is the voice indicator: cells swell on loudness, the right edge sheds pixels in proportion, a hard syllable throws a gust. Thinking sweeps a scan across the M.",
+  draw(dt, sub) {
+    const L = voice.level, O = voice.onset;
+    drawM(c => {
+      let f = mistFrac(c, 0.45 * L * breathe(c, 0.5) + 0.2 * O * (0.5 + c.hv));
+      if (state === "idle") f = mistFrac(c, -0.1);
+      if (state === "thinking") f = mistFrac(c, -0.1) + 0.4 * scanBoost(c);
+      return clamp(f, 0.12, 0.96);
+    }, null, sub);
+    streamM(L, O);
+    if (O > 0.35) shedM(dt, 2.5 * O, 1 + 1.2 * O, L);
+    stepParts(dt, shedDrift);
+  }
+});
+
+// 03 · FIELD — the whole screen is a sparse pixel field; the voice pushes it
+// away from the M like pressure, thinking pulls it in.
+V.push({
+  name: "Field", scale: 0.9,
+  blurb: "Black room, white dust everywhere. The voice is pressure: it pushes the field away from the M in a ring you can see travel. Thinking reverses it and draws the room inward. The M is the only solid thing.",
+  draw(dt, sub) {
+    const L = voice.level, O = voice.onset;
+    this.push = (this.push || 0) + ((state === "thinking" ? -0.55 : L * 1.1 + O * 0.5) - (this.push || 0)) * (1 - Math.exp(-dt * 5));
+    const R0 = Math.hypot(MW, MH) * 0.55;
+    const density = 0.05 / (D * D);
+    for (let gj = -2; gj < rows + 2; gj++) for (let gi = -2; gi < cols + 2; gi++) {
+      const hv = hash(gi * 1.31 + 3, gj * 2.71 + 5);
+      if (hv > density) continue;
+      const tw = vnoise2(gi * 0.3 + T * 0.25, gj * 0.3 - T * 0.2);
+      const rr = Math.hypot(gi - cx, gj - cy);
+      const nx = (gi - cx) / (rr || 1), ny = (gj - cy) / (rr || 1);
+      const reach = R0 * (1.2 + 2.8 * Math.abs(this.push));
+      const fall = 1 - smoothstep(0.3, 1, rr / reach);
+      const hole = R0 * 0.9 * this.push;
+      const disp = this.push >= 0 ? (Math.sqrt(rr * rr + hole * hole) - rr) * fall : -Math.min(rr * 0.5, R0 * 0.5 * -this.push * fall * (0.6 + 0.4 * Math.sin(T * 2 + rr * 0.3)));
+      let x = gi + nx * disp, y = gj + ny * disp;
+      if (bulge(Math.round(x), Math.round(y), BO)) { x += BO[0]; y += BO[1]; }
+      const near = 1 - smoothstep(R0 * 0.9, R0 * 3, rr);
+      cell(Math.round(x), Math.round(y), 0.22 + 0.3 * tw + 0.3 * near * L, 0.35 + 0.45 * tw + 0.2 * near * L, false, col(0.6 + 0.35 * (1 - near)));
+    }
+    drawM(c => mistFrac(c, 0.3 * L) + (state === "thinking" ? 0.3 * scanBoost(c) : 0), null, sub);
+    streamM(L, O);
+    stepParts(dt, shedDrift);
+  }
+});
+
+// 04 · SPECTRUM — the M's own columns are the analyzer: each column lifts by
+// its band's energy and leaves a grid-locked echo below.
+V.push({
+  name: "Spectrum", scale: 1,
+  blurb: "The letterform is the equalizer. Each column of the M is a frequency band: lows in the center, highs at the edges. Columns lift by whole cells and leave echoes below, so speech literally plays across the mark.",
+  draw(dt, sub) {
+    const L = voice.level, O = voice.onset, B = voice.bands;
+    if (!this.lift || this.lift.length !== MW) this.lift = new Float32Array(MW);
+    for (let i = 0; i < MW; i++) {
+      const tx = i / (MW - 1);
+      const kb = Math.min(7, Math.floor(Math.abs(tx - 0.5) * 2 * 8));
+      let target = state === "speaking" || state === "listening" ? B[kb] * (0.5 + L) * 7 + O * 2 * hash(i, 9) : 0;
+      if (state === "thinking") target = 2.2 * Math.max(0, Math.sin(tx * 9 - T * 4)) * (0.5 + 0.5 * Math.sin(T * 0.7));
+      if (state === "idle") target = 0.6 * Math.max(0, Math.sin(tx * 3 + T * 0.8));
+      target *= D;
+      this.lift[i] += (target - this.lift[i]) * (1 - Math.exp(-dt * (target > this.lift[i] ? 26 : 7)));
+    }
+    // echoes first (under the M)
+    for (let k = 0; k < MC.length; k++) {
+      const c = MC[k]; const lift = this.lift[c.i];
+      if (lift < 0.6) continue;
+      const n = Math.min(6 * D, Math.floor(lift));
+      for (let e = 1; e <= n; e++) {
+        const fade = 1 - e / (n + 1);
+        cell(mi0 + c.i + Math.round(SX[k]), mj0 + c.j - Math.round(lift) + e + Math.round(SY[k]), 0.2 + 0.35 * fade, 0.18 + 0.4 * fade, false, col(0.5 + 0.45 * (1 - fade)));
+      }
+    }
+    drawM(c => mistFrac(c, 0.4 * Math.min(1, this.lift[c.i] / 4)), null, sub);
+    // draw the M lifted: drawM placed it at rest; re-draw lifted copies where lift > 0 (rest copy stays as the floor)
+    for (let k = 0; k < MC.length; k++) {
+      const c = MC[k]; const lf = Math.round(this.lift[c.i]);
+      if (lf <= 0) continue;
+      cell(MP[k * 2], MP[k * 2 + 1] - lf, 0.7 + 0.25 * Math.min(1, this.lift[c.i] / 5), 1);
+    }
+    stepParts(dt);
+  }
+});
+
+// 05 · RIPPLE — the room stays black; every syllable emits a pixel ring from
+// the M that travels outward. Thinking runs rings inward.
+V.push({
+  name: "Ripple", scale: 0.86,
+  blurb: "Silence is black. Every syllable throws a grid-locked ring out of the M, so a sentence becomes a set of expanding circles you can read the rhythm of. Thinking runs the rings inward toward the mark.",
+  rings: [], cool: 0, idleT: 0,
+  draw(dt, sub) {
+    const L = voice.level, O = voice.onset;
+    const R0 = Math.hypot(MW, MH) * 0.5;
+    const Rmax = Math.hypot(cols, rows) * 0.55;
+    this.cool -= dt; this.idleT += dt;
+    const inward = state === "thinking";
+    if (state !== "idle" && !inward && O > 0.22 && this.cool <= 0) { this.rings.push({ r: R0 * 1.05, s: clamp(O * 1.3 + L * 0.5, 0.45, 1), age: 0 }); this.cool = 0.17; }
+    if (inward && this.cool <= 0) { this.rings.push({ r: Rmax, s: 0.55, age: 0, inward: true }); this.cool = 0.55; }
+    if (state === "idle" && this.idleT > 2.6) { this.rings.push({ r: R0 * 1.05, s: 0.35, age: 0, slow: true }); this.idleT = 0; }
+    for (let n = this.rings.length - 1; n >= 0; n--) {
+      const g = this.rings[n]; g.age += dt;
+      const v = (g.slow ? 9 : 30 + 30 * g.s) * D;
+      g.r += (g.inward ? -v : v) * dt;
+      const life = g.inward ? (g.r - R0 * 1.05) / (Rmax - R0) : 1 - (g.r - R0) / (Rmax - R0);
+      if (life <= 0) { this.rings.splice(n, 1); continue; }
+      const al = g.s * life * (g.inward ? 0.8 : 1);
+      const steps = Math.max(24, Math.round(g.r * 5.2));
+      for (let q = 0; q < steps; q++) {
+        const a = q / steps * 6.283 + g.age * 0.05;
+        // rings thin out as they travel: drop cells by hash as life fades
+        if (hash(q, n) > 0.5 + 0.5 * life) continue;
+        let gi = Math.round(cx + Math.cos(a) * g.r), gj = Math.round(cy + Math.sin(a) * g.r);
+        if (bulge(gi, gj, BO)) { gi += Math.round(BO[0]); gj += Math.round(BO[1]); }
+        cell(gi, gj, 0.3 + 0.5 * al, 0.35 + 0.65 * al, false, col(0.45 + 0.5 * (1 - life)));
+      }
+    }
+    // a faint shimmer hugging the M when listening, so the mark reads as "awake"
+    if (state === "listening" || state === "speaking") for (let q = 0; q < 140; q++) {
+      const a = q / 140 * 6.283 + T * 0.05;
+      if (hash(q, 77) > 0.25 + 0.5 * L) continue;
+      const r = R0 * (1.02 + 0.04 * vnoise2(Math.cos(a) * 2 + T, Math.sin(a) * 2));
+      cell(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 0.25 + 0.25 * L, 0.3 + 0.5 * L);
+    }
+    drawM(c => mistFrac(c, 0.25 * L + 0.12 * O) + (inward ? 0.25 * scanBoost(c) : 0), null, sub);
+    streamM(L, O);
+    stepParts(dt, shedDrift);
+  }
+});
+
+// ============================================================================
+// UI + loop
+// ============================================================================
+const $ = id => document.getElementById(id);
+function setVariant(ix) {
+  variantIx = (ix + V.length) % V.length;
+  mScale = V[variantIx].scale; layout();
+  PARTS.length = 0; SX.fill(0); SY.fill(0); SVX.fill(0); SVY.fill(0);
+  $("tK").textContent = `0${variantIx + 1} / 0${V.length}`;
+  $("tH").textContent = V[variantIx].name;
+  $("tP").textContent = V[variantIx].blurb;
+  [...$("variants").children].forEach((el, n) => el.classList.toggle("on", n === variantIx));
+}
+function setState(s) {
+  if (s !== state) { snapT = 0; if (s === "thinking") wipeT0 = T + 0.2; }   // the wipe starts fresh, after the M has faded
+  state = s;
+  [...$("states").children].forEach(el => el.classList.toggle("on", el.dataset.s === s));
+  $("ph").textContent = { idle: "Ask MIST anything…", listening: "Listening…", thinking: "Working…", speaking: "MIST is speaking" }[s];
+  $("ph").dataset.base = $("ph").textContent;
+}
+function syncButtons() {
+  $("simBtn").classList.toggle("on", voice.mode === "sim");
+  $("micBtn").classList.toggle("on", voice.mode === "mic");
+}
+V.forEach((v, n) => { const b = document.createElement("span"); b.className = "chip"; b.innerHTML = `<kbd>${n + 1}</kbd>${v.name}`; b.onclick = () => setVariant(n); $("variants").appendChild(b); });
+STATES.forEach((s, n) => { const b = document.createElement("span"); b.className = "chip"; b.dataset.s = s; b.innerHTML = `<kbd>${"QWER"[n]}</kbd>${s}`; b.onclick = () => { stopDemo(); setQuiet(false); setState(s); }; $("states").appendChild(b); });
+{ const b = document.createElement("span"); b.className = "chip"; b.id = "quietChip"; b.innerHTML = `<kbd>U</kbd>quiet`; b.onclick = () => setQuiet(!QUIET); $("states").appendChild(b);
+  const d = document.createElement("span"); d.className = "chip"; d.id = "demoChip"; d.innerHTML = `<kbd>P</kbd>demo`; d.onclick = () => (DEMO ? stopDemo() : playDemo()); $("states").appendChild(d); }
+// quiet: same state, but the voice is a murmur (room tone, someone speaking softly / far away)
+let QUIET = false;
+function setQuiet(q) { QUIET = q; voice.gain = q ? 0.22 : 1; $("quietChip").classList.toggle("on", q); }
+// demo: a realistic pass through the states. [state, quiet, seconds]
+const SCRIPT = [["idle", false, 4], ["listening", true, 3], ["listening", false, 6], ["listening", true, 2], ["thinking", true, 4], ["speaking", false, 11], ["speaking", true, 2], ["idle", false, 5]];
+let DEMO = null, demoIx = 0, demoT = 0;
+function playDemo() { DEMO = true; demoIx = -1; demoT = 0; $("demoChip").classList.add("on"); }
+function stopDemo() { if (!DEMO) return; DEMO = null; $("demoChip").classList.remove("on"); $("demoChip").innerHTML = `<kbd>P</kbd>demo`; }
+function stepDemo(dt) {
+  if (!DEMO) return;
+  demoT -= dt;
+  if (demoT <= 0) {
+    demoIx = (demoIx + 1) % SCRIPT.length; const [st, q, secs] = SCRIPT[demoIx];
+    if (st === "thinking" && LAYOUT !== "answer") setLayout("answer");
+    if (st === "idle" && LAYOUT === "answer") setLayout("center");
+    setState(st); setQuiet(q); demoT = secs;
+  }
+  $("demoChip").innerHTML = `<kbd>P</kbd>demo ${demoIx + 1}/${SCRIPT.length} · ${Math.ceil(demoT)}s`;
+}
+function syncGrid() {
+  $("gShape").innerHTML = `<kbd>C</kbd>${SHAPE}`;
+  $("gDens").innerHTML = `<kbd>G</kbd>${DG}x grid`;
+  $("gBoard").innerHTML = `<kbd>B</kbd>board ${BOARD ? "on" : "off"}`;
+  $("gLayout").innerHTML = `<kbd>L</kbd>${LAYOUT}`;
+  $("gLook").innerHTML = `<kbd>K</kbd>${LOOK}`;
+  $("gVibe").innerHTML = `<kbd>Y</kbd>${VIBE}`;
+  $("gColor").innerHTML = `<kbd>O</kbd>${COLOR ? "color" : "mono"}`;
+  document.body.classList.toggle("left", LAYOUT === "left"); document.body.classList.toggle("lay-answer", LAYOUT === "answer");
+  $("tP").textContent = V[variantIx].blurb;
+  document.body.classList.toggle("high", LAYOUT === "high");
+}
+function setShape(v) { SHAPE = v || ({ round: "square", square: "mixed", mixed: "round" })[SHAPE]; boardKey = ""; syncGrid(); }
+function setDensity(d) { DG = d; buildM(LAYOUT === "answer" ? 1 : d); buildGrow(); buildProfile(); layout(); PARTS.length = 0; syncGrid(); }
+function setBoard(b) { BOARD = b == null ? !BOARD : b; syncGrid(); }
+function setVibe(v) { VIBE = v && VIBES[v] ? v : VIBE_NAMES[(VIBE_NAMES.indexOf(VIBE) + 1) % VIBE_NAMES.length]; syncGrid(); }
+function setLook(v) { LOOK = v && LOOKS.includes(v) ? v : LOOKS[(LOOKS.indexOf(LOOK) + 1) % LOOKS.length]; syncGrid(); }
+const LAYOUTS = ["center", "high", "left", "answer"];
+let cardsT = 0;   // seconds since the answer layout began (drives the progressive card reveal)
+function setLayout(v) {
+  LAYOUT = v && LAYOUTS.includes(v) ? v : LAYOUTS[(LAYOUTS.indexOf(LAYOUT) + 1) % LAYOUTS.length];
+  const wantD = LAYOUT === "answer" ? 1 : DG;
+  if (wantD !== D) { const oi = mi0 + MW / 2, oj = mj0 + MH / 2; buildM(wantD); buildGrow(); buildProfile(); mi0 = Math.round(oi - MW / 2); mj0 = Math.round(oj - MH / 2); }
+  ANIMATE_LAYOUT = true; cardsT = 0; snapT = 0; layout(); ANIMATE_LAYOUT = false; syncGrid();
+}
+function stepLayout(dt) {
+  cardsT += dt;
+  const di = layoutTarget.i - mi0, dj = layoutTarget.j - mj0;
+  if (!di && !dj) return;
+  const step = Math.max(1, Math.round(Math.hypot(di, dj) * dt * 4));
+  mi0 += Math.sign(di) * Math.min(Math.abs(di), step); mj0 += Math.sign(dj) * Math.min(Math.abs(dj), step);
+  cx = mi0 + MW / 2; cy = mj0 + MH / 2;
+}
+function setColor(v) { COLOR = v == null ? !COLOR : v; boardKey = ""; syncGrid(); }
+// mock answer cards for the "left" layout, drawn on the canvas so the stage wall carries them too
+function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function drawCards(c) {
+  const answer = LAYOUT === "answer";
+  const x0 = answer ? W * 0.27 : W * 0.5, w = answer ? W * 0.46 : W * 0.42, u = Math.min(W, H) / 1080;   // u: scale relative to a 1080p frame
+  const reveal = answer ? cardsT : 99;                              // answer layout: things appear over time
+  const show = at => Math.min(1, Math.max(0, (reveal - at) / 0.5));  // 0..1 fade for an element that lands at `at` seconds
+  const font = (px, wgt = "") => `${wgt} ${Math.round(px * u)}px -apple-system, Inter, system-ui, sans-serif`;
+  c.save(); c.setTransform(DPR, 0, 0, DPR, 0, 0); c.globalAlpha = 1; c.textBaseline = "alphabetic";
+  let y = answer ? H * 0.2 : H * 0.24;
+  if (answer) {
+    c.globalAlpha = show(0.1); c.fillStyle = COLOR ? PAL[18] : "#9aa0aa"; c.font = font(13); c.fillText("F L U I D", x0, y); y += 48 * u;
+    c.globalAlpha = show(0.35); c.fillStyle = "#fff"; c.font = font(46, "500"); c.fillText("Let’s take a look.", x0, y); y += 40 * u;
+    c.globalAlpha = show(0.7); c.fillStyle = "#8a8f99"; c.font = font(17); c.fillText("Can you tell me what we’ve done on the website this week?", x0, y); y += 44 * u;
+    const steps = ["Querying your database", "Checking your store data", "Summarising the change log"];
+    steps.forEach((t, n) => {
+      const at = 1.3 + n * 0.9, a = show(at); if (a <= 0) return;
+      const done = reveal > at + 1.1;
+      c.globalAlpha = a; c.fillStyle = COLOR ? PAL[14] : "#fff"; c.beginPath(); c.arc(x0 + 5 * u, y - 6 * u, 3.5 * u, 0, 6.283); c.fill();
+      c.fillStyle = "#c9cdd4"; c.font = font(15); c.fillText(t, x0 + 20 * u, y);
+      c.fillStyle = "#6b7079"; c.textAlign = "right"; c.fillText(done ? "Done" : "…", x0 + w, y); c.textAlign = "left";
+      y += 28 * u;
+    });
+    y += 14 * u;
+    const aCard = show(4.4);
+    if (aCard > 0) {
+      c.globalAlpha = aCard;
+      const hCard = 150 * u; y += (1 - aCard) * 14 * u;                  // slides up as it fades in
+      c.fillStyle = "rgba(10,10,14,0.72)"; c.strokeStyle = "#23262c"; c.lineWidth = 1;
+      roundRect(c, x0, y, w, hCard, 16 * u); c.fill(); c.stroke();
+      c.fillStyle = COLOR ? PAL[20] : "#8a7cf0"; c.font = font(11); c.fillText("S U M M A R Y", x0 + 24 * u, y + 36 * u);
+      c.fillStyle = "#fff"; c.font = font(18, "600"); c.fillText("MIST", x0 + 24 * u, y + 66 * u);
+      c.fillStyle = "#b6bac2"; c.font = font(17);
+      const msg = "Pulling the actual change log from the reporting database now.";
+      const chars = Math.min(msg.length, Math.floor((reveal - 4.6) * 38));   // types itself out
+      if (chars > 0) c.fillText(msg.slice(0, chars), x0 + 24 * u, y + 100 * u);
+    }
+    c.restore(); return;
+  }
+  c.fillStyle = COLOR ? PAL[18] : "#9aa0aa"; c.font = `${Math.round(13 * u)}px -apple-system, Inter, system-ui, sans-serif`;
+  c.fillText("F L U I D", x0, y); y += 48 * u;
+  c.fillStyle = "#fff"; c.font = `500 ${Math.round(46 * u)}px -apple-system, Inter, system-ui, sans-serif`;
+  c.fillText("Let’s take a look.", x0, y); y += 40 * u;
+  c.fillStyle = "#8a8f99"; c.font = `${Math.round(17 * u)}px -apple-system, Inter, system-ui, sans-serif`;
+  c.fillText("Can you tell me what we’ve done on the website this week?", x0, y); y += 44 * u;
+  const steps = ["Querying your database", "Checking your store data", "Querying your database"];
+  steps.forEach((t, n) => {
+    const done = state !== "thinking" || (T * 0.6) % 3 > n;
+    c.fillStyle = COLOR ? PAL[14] : "#fff"; c.beginPath(); c.arc(x0 + 5 * u, y - 6 * u, 3.5 * u, 0, 6.283); c.fill();
+    c.fillStyle = "#c9cdd4"; c.font = `${Math.round(15 * u)}px -apple-system, Inter, system-ui, sans-serif`; c.fillText(t, x0 + 20 * u, y);
+    c.fillStyle = "#6b7079"; c.textAlign = "right"; c.fillText(done ? "Done" : "…", x0 + w, y); c.textAlign = "left";
+    y += 28 * u;
+  });
+  y += 14 * u;
+  c.fillStyle = "rgba(10,10,14,0.72)"; c.strokeStyle = "#23262c"; c.lineWidth = 1;
+  roundRect(c, x0, y, w, 150 * u, 16 * u); c.fill(); c.stroke();
+  c.fillStyle = COLOR ? PAL[20] : "#8a7cf0"; c.font = `${Math.round(11 * u)}px -apple-system, Inter, system-ui, sans-serif`; c.fillText("S U M M A R Y", x0 + 24 * u, y + 36 * u);
+  c.fillStyle = "#fff"; c.font = `600 ${Math.round(18 * u)}px -apple-system, Inter, system-ui, sans-serif`; c.fillText("MIST", x0 + 24 * u, y + 66 * u);
+  c.fillStyle = "#b6bac2"; c.font = `${Math.round(17 * u)}px -apple-system, Inter, system-ui, sans-serif`;
+  c.fillText("Pulling the actual change log from the reporting database now.", x0 + 24 * u, y + 100 * u);
+  c.restore();
+}
+$("gLook").onclick = () => setLook();
+$("gVibe").onclick = () => setVibe();
+$("gColor").onclick = () => setColor();
+$("gShape").onclick = () => setShape(); $("gDens").onclick = () => setDensity(DG % 3 + 1); $("gBoard").onclick = () => setBoard(); $("gLayout").onclick = () => setLayout();
+$("simBtn").onclick = () => voice.sim();
+$("micBtn").onclick = () => voice.mic();
+window.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k >= "1" && k <= "5") setVariant(+k - 1);
+  else if ("qwer".includes(k) && k) { stopDemo(); setQuiet(false); setState(STATES["qwer".indexOf(k)]); }
+  else if (k === "u") setQuiet(!QUIET);
+  else if (k === "p") DEMO ? stopDemo() : playDemo();
+  else if (k === "s") voice.sim();
+  else if (k === "m") voice.mic();
+  else if (k === "h") document.body.classList.toggle("clean");
+  else if (k === "c") setShape();
+  else if (k === "g") setDensity(DG % 3 + 1);
+  else if (k === "b") setBoard();
+  else if (k === "l") setLayout();
+  else if (k === "k") setLook();
+  else if (k === "y") setVibe();
+  else if (k === "o") setColor();
+  else if (k === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  else if (k === "arrowright") setVariant(variantIx + 1);
+  else if (k === "arrowleft") setVariant(variantIx - 1);
+});
+
+setDensity(2); layout(); setVariant(0); setState("listening"); syncButtons(); syncGrid();
+// ?still=1&v=0&state=speaking&t=2.4  → hide UI, run the sim deterministically, freeze on one frame (for captures)
+const Q = new URLSearchParams(location.search);
+const STILL = Q.get("still") === "1";
+if (Q.get("embed") === "1") { document.body.classList.add("clean"); setState("listening"); }   // stage.html drives this copy
+if (STILL) { document.body.classList.add("clean"); setVariant(+(Q.get("v") || 0)); setState(Q.get("state") || "speaking"); }
+{
+  if (Q.get("shape")) setShape(Q.get("shape"));
+  if (Q.get("dens")) setDensity(+Q.get("dens"));
+  if (Q.get("board") === "1") setBoard(true);
+  if (Q.get("layout")) setLayout(Q.get("layout"));
+  if (Q.get("look")) setLook(Q.get("look"));
+  if (Q.get("vibe")) setVibe(Q.get("vibe"));
+  if (Q.get("color") === "0") setColor(false);
+}
+let LIVEBOARD = true; const RPROF = {};
+window.__mist = { voice, P, render, PROF: RPROF, set LIVEBOARD(v) { LIVEBOARD = v; }, setState, setLayout, setQuiet, playDemo, stopDemo, get LAYOUT() { return LAYOUT; }, get QUIET() { return QUIET; }, get DEMO() { return !!DEMO; }, get state() { return state; }, get STREAM() { return STREAM; }, get cA() { return cA; }, get cS() { return cS; }, get cols() { return cols; }, get rows() { return rows; }, get mode() { return voice.mode; }, get gain() { return voice.gain; }, get grow() { return grow; }, get layout() { return LAYOUT; }, get D() { return D; }, get cs() { return cs; }, get W() { return W; }, get H() { return H; }, get boardColor() { return COLOR ? "#cdb6ff" : "#fff"; }, get MC() { return MC; }, get GROW1() { return GROW1; }, get GROW2() { return GROW2; }, get MW() { return MW; }, get MH() { return MH; } };
+let last = performance.now();
+function frame(now) { render(now); requestAnimationFrame(frame); }
+function render(now) {
+  const dt = clamp((now - last) / 1000, 0, 0.05); last = now; T += dt; snapT += dt;
+  stepDemo(dt); stepLayout(dt);
+  voice.update(T, dt);
+  P.en *= Math.exp(-dt * 2.2);
+  const sub = Math.max(1, Math.min(4, Math.round(dt * 60)));
+  // ambient drift: the pinks wander toward magenta and back, the violets toward blue, over ~20-40 s
+  buildPal(22 * Math.sin(T * 0.11) + 14 * Math.sin(T * 0.067 + 2.1), 0.9 + 0.1 * Math.sin(T * 0.09 + 1));
+  ctx = LOOK === "clean" ? mainCtx : scnCtx;
+  ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#fff"; curFill = "#fff";
+  const p0 = performance.now();
+  if (BOARD) { drawBoard(); if (LIVEBOARD) drawBoardAura(voice.level); }
+  const p1 = performance.now();
+  V[variantIx].draw(dt, sub);
+  const p2 = performance.now();
+  flushCells();
+  const p3 = performance.now();
+  RPROF.board = p1 - p0; RPROF.draw = p2 - p1; RPROF.flush = p3 - p2;
+  ctx.globalAlpha = 1;
+  if (LOOK !== "clean") composite(voice.level);
+  if (LAYOUT === "left" || LAYOUT === "answer") drawCards(mainCtx);
+  $("meter").style.height = `${Math.round(voice.level * 100)}%`;
+  $("dot").style.transform = `scale(${1 + voice.level * 1.2})`;
+}
+if (STILL) {
+  let clock = performance.now(); last = clock;
+  const secs = +(Q.get("t") || 2.4);
+  for (let i = 0; i < Math.round(secs * 60); i++) { clock += 1000 / 60; render(clock); }
+  document.title = "still-ready";
+  // keep re-presenting the frozen frame (dt = 0) so headless captures always see it painted
+  const hold = () => { render(clock); requestAnimationFrame(hold); }; requestAnimationFrame(hold);
+} else requestAnimationFrame(frame);
+</script>
+</body>
+</html>

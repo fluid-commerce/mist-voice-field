@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mist-voice-field",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "5231", "--bind", "127.0.0.1", "--directory", "/Users/britonbaker/SideProjects/mist-voice-field"],
+      "port": 5231
+    }
+  ]
+}
